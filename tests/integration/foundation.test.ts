@@ -84,7 +84,7 @@ describe("PostgreSQL foundation", () => {
 
     expect(persistedPregnancy.status).toBe("COMPLETED");
     expect(persistedPregnancy.confirmedChildId).toBe(result.childId);
-    expect(persistedPregnancy.confirmedBirthDate.toISOString().slice(0, 10)).toBe("2026-08-10");
+    expect(persistedPregnancy.confirmedBirthDate?.toISOString().slice(0, 10)).toBe("2026-08-10");
     expect(child.name).toBeNull();
     expect(child.currentSize).toBeNull();
     expect(child.birthDate.toISOString().slice(0, 10)).toBe("2026-08-10");
