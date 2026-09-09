@@ -86,15 +86,6 @@ jobs:
           output="$(npx tsx tests/e2e/opportunity-seed.ts)"
           echo "$output" | grep '^OPPORTUNITY_CUSTOMER_ID=' >> "$GITHUB_ENV"
           echo "$output" | grep '^OPPORTUNITY_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
-      - name: Seed disposable contact decision visual states
-        shell: bash
-        run: |
-          output="$(npx tsx tests/e2e/contact-decision-seed.ts)"
-          echo "$output" | grep '^CONTACT_DECISION_PRIMARY_CUSTOMER_ID=' >> "$GITHUB_ENV"
-          echo "$output" | grep '^CONTACT_DECISION_FUTURE_CUSTOMER_ID=' >> "$GITHUB_ENV"
-          echo "$output" | grep '^CONTACT_DECISION_MISSING_CONSENT_CUSTOMER_ID=' >> "$GITHUB_ENV"
-          echo "$output" | grep '^CONTACT_DECISION_DNC_CUSTOMER_ID=' >> "$GITHUB_ENV"
-          echo "$output" | grep '^CONTACT_DECISION_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
       - name: Production build
         run: npm run build
       - name: Install Chromium
@@ -116,6 +107,15 @@ jobs:
         run: node tests/e2e/foundation-browser-acceptance.mjs
       - name: Verify opportunity slice matrix in Chromium
         run: node tests/e2e/opportunity-browser-acceptance.mjs
+      - name: Seed disposable contact decision visual states
+        shell: bash
+        run: |
+          output="$(npx tsx tests/e2e/contact-decision-seed.ts)"
+          echo "$output" | grep '^CONTACT_DECISION_PRIMARY_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_FUTURE_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_MISSING_CONSENT_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_DNC_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
       - name: Verify contact decision slice matrix in Chromium
         run: node tests/e2e/contact-decision-browser-acceptance.mjs
       - name: Show server errors
