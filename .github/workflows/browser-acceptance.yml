@@ -103,6 +103,9 @@ jobs:
           exit 1
       - name: Verify foundation regression matrix in Chromium
         run: node tests/e2e/foundation-browser-acceptance.mjs
+      - name: Reset disposable auth rate-limit state between suites
+        shell: bash
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'DELETE FROM principal.rate_limit;'
       - name: Verify opportunity slice matrix in Chromium
         run: node tests/e2e/opportunity-browser-acceptance.mjs
       - name: Show server errors
