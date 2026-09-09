@@ -51,6 +51,6 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
     {result.items.length === 0 ? <Card className="p-6 text-center"><h2 className="font-bold">Nenhuma oportunidade no momento</h2><p className="mt-2 text-sm text-slate-500">Os filtros atuais não retornaram nenhuma oportunidade real.</p>{canManage && <p className="mt-2 text-xs text-slate-400">Use “Atualizar oportunidades” para detectar novos marcos de jornada.</p>}</Card> : <div className="space-y-3">{result.items.map((opportunity) => <OpportunityCard key={opportunity.id} opportunity={opportunity} canManage={canManage} />)}</div>}
 
     {!canManage && <p className="text-xs text-slate-500">Seu perfil possui acesso de leitura. Alterações operacionais de oportunidades estão desabilitadas.</p>}
-    <span className="sr-only">{opportunityStatusLabels[result.applied.status]}</span>
+    <span className="sr-only">{opportunityStatusLabels[result.applied.status ?? "OPEN"]}</span>
   </div>;
 }

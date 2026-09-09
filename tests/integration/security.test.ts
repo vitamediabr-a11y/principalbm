@@ -89,7 +89,7 @@ describe("least-privilege runtime and RLS", () => {
   });
 
   it("enables RLS on private tables while keeping backend tenant isolation explicitly application-scoped", async () => {
-    const expectedTables = ["user", "session", "account", "verification", "rate_limit", "organizations", "memberships", "customers", "pregnancies", "children", "lifecycle_events", "audit_logs", "consents"].sort();
+    const expectedTables = ["user", "session", "account", "verification", "rate_limit", "organizations", "memberships", "customers", "pregnancies", "children", "lifecycle_events", "journey_events", "opportunities", "audit_logs", "consents"].sort();
     const tables = await adminPool.query<{ relname: string; relrowsecurity: boolean; owner: string }>(`
       SELECT c.relname, c.relrowsecurity, pg_get_userbyid(c.relowner) AS owner
       FROM pg_class c

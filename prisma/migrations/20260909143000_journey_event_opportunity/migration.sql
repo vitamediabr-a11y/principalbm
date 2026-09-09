@@ -26,6 +26,25 @@ CREATE TABLE principal."journey_events" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "journey_events_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "journey_events_exactly_one_source_check" CHECK ((CASE WHEN "pregnancyId" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN "childId" IS NULL THEN 0 ELSE 1 END) = 1),
+  CONSTRAINT "journey_events_type_source_check" CHECK (
+    (
+      "type" IN (
+        'PREGNANCY_MONTH_5', 'PREGNANCY_MONTH_6', 'PREGNANCY_MONTH_7', 'PREGNANCY_MONTH_8',
+        'DPP_MINUS_60', 'DPP_MINUS_30', 'DPP_MINUS_15', 'PREGNANCY_UPDATE_REQUIRED'
+      )
+      AND "pregnancyId" IS NOT NULL
+      AND "childId" IS NULL
+    )
+    OR
+    (
+      "type" IN (
+        'CHILD_30_DAYS', 'CHILD_3_MONTHS', 'CHILD_6_MONTHS', 'CHILD_9_MONTHS',
+        'CHILD_12_MONTHS', 'CHILD_18_MONTHS', 'CHILD_2_YEARS'
+      )
+      AND "childId" IS NOT NULL
+      AND "pregnancyId" IS NULL
+    )
+  ),
   CONSTRAINT "journey_events_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES principal."organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_events_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES principal."customers"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_events_pregnancyId_fkey" FOREIGN KEY ("pregnancyId") REFERENCES principal."pregnancies"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -64,7 +83,7 @@ CREATE TABLE principal."opportunities" (
   CONSTRAINT "opportunities_responsibleMembershipId_fkey" FOREIGN KEY ("responsibleMembershipId") REFERENCES principal."memberships"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "opportunities_journeyEventId_key" ON principal."opportunities"("journeyEventId");
-CREATE INDEX "opportunities_organizationId_status_priority_score_recommendedAt_idx" ON principal."opportunities"("organizationId", "status", "priority", "score", "recommendedAt");
+CREATE INDEX "opportunities_org_status_priority_score_date_idx" ON principal."opportunities"("organizationId", "status", "priority", "score", "recommendedAt");
 CREATE INDEX "opportunities_customerId_status_recommendedAt_idx" ON principal."opportunities"("customerId", "status", "recommendedAt");
 CREATE INDEX "opportunities_responsibleMembershipId_status_idx" ON principal."opportunities"("responsibleMembershipId", "status");
 

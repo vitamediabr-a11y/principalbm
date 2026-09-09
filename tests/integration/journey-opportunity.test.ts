@@ -273,7 +273,7 @@ describe("journey event → opportunity PostgreSQL slice", () => {
     }
   });
 
-  it("enforces exactly one factual JourneyEvent source at PostgreSQL level", async () => {
+  it("enforces JourneyEvent source cardinality and type/source matching at PostgreSQL level", async () => {
     const actor = await createActor("SELLER", "source-check");
     const { customer, pregnancy } = await customerWithPregnancy(actor);
     const child = await prisma.child.create({ data: { customerId: customer.id, name: "Fonte", birthDate: d("2026-06-09") } });
@@ -295,6 +295,26 @@ describe("journey event → opportunity PostgreSQL slice", () => {
       type: "PREGNANCY_MONTH_6",
       effectiveAt: d("2026-09-06"),
       dedupeKey: "invalid-two-sources",
+      ruleVersion: 1,
+    } })).rejects.toBeTruthy();
+
+    await expect(prisma.journeyEvent.create({ data: {
+      organizationId: actor.organizationId,
+      customerId: customer.id,
+      pregnancyId: pregnancy.id,
+      type: "CHILD_6_MONTHS",
+      effectiveAt: d("2026-12-09"),
+      dedupeKey: "invalid-child-type-pregnancy-source",
+      ruleVersion: 1,
+    } })).rejects.toBeTruthy();
+
+    await expect(prisma.journeyEvent.create({ data: {
+      organizationId: actor.organizationId,
+      customerId: customer.id,
+      childId: child.id,
+      type: "DPP_MINUS_30",
+      effectiveAt: d("2026-12-04"),
+      dedupeKey: "invalid-pregnancy-type-child-source",
       ruleVersion: 1,
     } })).rejects.toBeTruthy();
   });

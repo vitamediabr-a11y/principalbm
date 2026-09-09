@@ -379,7 +379,7 @@ model Opportunity {
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   journeyEvent JourneyEvent @relation(fields: [journeyEventId], references: [id], onDelete: Cascade)
   responsibleMembership Membership? @relation("OpportunityResponsible", fields: [responsibleMembershipId], references: [id], onDelete: SetNull)
-  @@index([organizationId, status, priority, score, recommendedAt])
+  @@index([organizationId, status, priority, score, recommendedAt], map: "opportunities_org_status_priority_score_date_idx")
   @@index([customerId, status, recommendedAt])
   @@index([responsibleMembershipId, status])
   @@map("opportunities")

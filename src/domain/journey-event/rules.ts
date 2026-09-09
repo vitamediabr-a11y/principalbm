@@ -103,16 +103,18 @@ export function deriveChildEventCandidates(child: {
   updatedAt: Date;
 }): JourneyEventCandidate[] {
   const birthDate = utcDate(child.birthDate);
-  return [
-    { type: "CHILD_30_DAYS", effectiveAt: addCalendarDays(birthDate, 30) },
-    { type: "CHILD_3_MONTHS", effectiveAt: addCalendarMonthsClamped(birthDate, 3) },
-    { type: "CHILD_6_MONTHS", effectiveAt: addCalendarMonthsClamped(birthDate, 6) },
-    { type: "CHILD_9_MONTHS", effectiveAt: addCalendarMonthsClamped(birthDate, 9) },
-    { type: "CHILD_12_MONTHS", effectiveAt: addCalendarMonthsClamped(birthDate, 12) },
-    { type: "CHILD_18_MONTHS", effectiveAt: addCalendarMonthsClamped(birthDate, 18) },
-    { type: "CHILD_2_YEARS", effectiveAt: addCalendarMonthsClamped(birthDate, 24) },
-  ].map((candidate) => ({
-    ...candidate,
+  const rules: Array<[JourneyEventTypeCode, Date]> = [
+    ["CHILD_30_DAYS", addCalendarDays(birthDate, 30)],
+    ["CHILD_3_MONTHS", addCalendarMonthsClamped(birthDate, 3)],
+    ["CHILD_6_MONTHS", addCalendarMonthsClamped(birthDate, 6)],
+    ["CHILD_9_MONTHS", addCalendarMonthsClamped(birthDate, 9)],
+    ["CHILD_12_MONTHS", addCalendarMonthsClamped(birthDate, 12)],
+    ["CHILD_18_MONTHS", addCalendarMonthsClamped(birthDate, 18)],
+    ["CHILD_2_YEARS", addCalendarMonthsClamped(birthDate, 24)],
+  ];
+  return rules.map(([type, effectiveAt]) => ({
+    type,
+    effectiveAt,
     source: "CHILD" as const,
     sourceId: child.id,
     informationUpdatedAt: child.updatedAt,
