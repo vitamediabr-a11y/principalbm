@@ -1,9 +1,10 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/lib/app-error";
+import { assertAuthorized } from "@/lib/authorization";
 import { normalizeBrazilianPhone } from "@/domain/contact/phone";
 import { customerInputSchema, type CustomerInput } from "@/domain/customer/schemas";
-import { requirePermission } from "@/services/auth-context";
+import { requireAuthContext, type AuthContext } from "@/services/auth-context";
 import { writeAudit } from "@/services/audit-service";
 
 function blankToNull(value?: string) {
@@ -28,14 +29,16 @@ function mapUniqueContactError(error: unknown): never {
   throw error;
 }
 
-export async function listCustomers(input: {
+export type CustomerListInput = {
   search?: string;
   status?: string;
   source?: string;
   responsibleMembershipId?: string;
   page?: number;
-}) {
-  const context = await requirePermission("customer:view");
+};
+
+export async function listCustomersWithContext(context: AuthContext, input: CustomerListInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "customer:view");
   const page = Math.max(1, input.page ?? 1);
   const pageSize = 20;
   const search = input.search?.trim();
@@ -83,8 +86,12 @@ export async function listCustomers(input: {
   return { items, total, page, pageSize, context };
 }
 
-export async function getCustomer360(customerId: string) {
-  const context = await requirePermission("customer:view");
+export async function listCustomers(input: CustomerListInput) {
+  return listCustomersWithContext(await requireAuthContext(), input);
+}
+
+export async function getCustomer360WithContext(context: AuthContext, customerId: string) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "customer:view");
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, organizationId: context.organizationId },
     include: {
@@ -100,8 +107,12 @@ export async function getCustomer360(customerId: string) {
   return { customer, context };
 }
 
-export async function getAssignableMembers() {
-  const context = await requirePermission("customer:view");
+export async function getCustomer360(customerId: string) {
+  return getCustomer360WithContext(await requireAuthContext(), customerId);
+}
+
+export async function getAssignableMembersWithContext(context: AuthContext) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "customer:view");
   return prisma.membership.findMany({
     where: { organizationId: context.organizationId, active: true },
     orderBy: { user: { name: "asc" } },
@@ -109,8 +120,12 @@ export async function getAssignableMembers() {
   });
 }
 
-export async function createCustomer(rawInput: CustomerInput) {
-  const context = await requirePermission("customer:edit");
+export async function getAssignableMembers() {
+  return getAssignableMembersWithContext(await requireAuthContext());
+}
+
+export async function createCustomerWithContext(context: AuthContext, rawInput: CustomerInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "customer:edit");
   const input = customerInputSchema.parse(rawInput);
   const responsibleMembershipId = await validateResponsibleMembership(context.organizationId, input.responsibleMembershipId || undefined);
   const whatsappNormalized = normalizeBrazilianPhone(input.whatsapp);
@@ -148,8 +163,12 @@ export async function createCustomer(rawInput: CustomerInput) {
   }
 }
 
-export async function updateCustomer(customerId: string, rawInput: CustomerInput) {
-  const context = await requirePermission("customer:edit");
+export async function createCustomer(rawInput: CustomerInput) {
+  return createCustomerWithContext(await requireAuthContext(), rawInput);
+}
+
+export async function updateCustomerWithContext(context: AuthContext, customerId: string, rawInput: CustomerInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "customer:edit");
   const input = customerInputSchema.parse(rawInput);
   const responsibleMembershipId = await validateResponsibleMembership(context.organizationId, input.responsibleMembershipId || undefined);
   const existing = await prisma.customer.findFirst({
@@ -191,4 +210,8 @@ export async function updateCustomer(customerId: string, rawInput: CustomerInput
   } catch (error) {
     mapUniqueContactError(error);
   }
+}
+
+export async function updateCustomer(customerId: string, rawInput: CustomerInput) {
+  return updateCustomerWithContext(await requireAuthContext(), customerId, rawInput);
 }
