@@ -21,6 +21,8 @@ export async function cleanDatabase() {
   await adminPool.query(`
     TRUNCATE TABLE
       principal.audit_logs,
+      principal.opportunities,
+      principal.journey_events,
       principal.lifecycle_events,
       principal.consents,
       principal.pregnancies,

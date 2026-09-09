@@ -7,6 +7,8 @@ export type Permission =
   | "lifecycle:edit"
   | "child:edit"
   | "birth:confirm"
+  | "opportunity:view"
+  | "opportunity:manage"
   | "report:view"
   | "team:manage"
   | "privacy:manage"
@@ -19,6 +21,8 @@ const allPermissions: Permission[] = [
   "lifecycle:edit",
   "child:edit",
   "birth:confirm",
+  "opportunity:view",
+  "opportunity:manage",
   "report:view",
   "team:manage",
   "privacy:manage",
@@ -34,6 +38,8 @@ export const permissionsByRole: Record<BusinessRole, readonly Permission[]> = {
     "lifecycle:edit",
     "child:edit",
     "birth:confirm",
+    "opportunity:view",
+    "opportunity:manage",
     "report:view",
     "team:manage",
     "privacy:manage",
@@ -45,8 +51,10 @@ export const permissionsByRole: Record<BusinessRole, readonly Permission[]> = {
     "lifecycle:edit",
     "child:edit",
     "birth:confirm",
+    "opportunity:view",
+    "opportunity:manage",
   ],
-  MARKETING: ["customer:view", "lifecycle:view", "report:view"],
+  MARKETING: ["customer:view", "lifecycle:view", "opportunity:view", "report:view"],
 };
 
 export function hasPermission(role: BusinessRole, permission: Permission) {
