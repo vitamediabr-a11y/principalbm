@@ -13,7 +13,7 @@ export const customerInputSchema = z.object({
   city: optionalText(120),
   source: z.enum(customerSources),
   responsibleMembershipId: z.string().uuid().optional().or(z.literal("")),
-  status: z.enum(customerStatuses).default("CUSTOMER"),
+  status: z.enum(customerStatuses),
   notes: optionalText(3000),
 }).superRefine((value, ctx) => {
   if (!value.whatsapp?.trim() && !value.phone?.trim()) {
