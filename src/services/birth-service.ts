@@ -13,7 +13,15 @@ function blankToNull(value?: string) {
   return trimmed ? trimmed : null;
 }
 
-async function runSerializableConfirmation(context: AuthContext, input: BirthConfirmationInput) {
+export type BirthConfirmationVerificationHooks = {
+  beforeCommit?: () => void | Promise<void>;
+};
+
+async function runSerializableConfirmation(
+  context: AuthContext,
+  input: BirthConfirmationInput,
+  hooks?: BirthConfirmationVerificationHooks,
+) {
   const actualBirthDate = parseDateOnly(input.actualBirthDate);
   const today = dateOnlyFromInstant(new Date(), env.APP_TIME_ZONE);
   if (actualBirthDate.getTime() > today.getTime()) throw new AppError(422, "FUTURE_BIRTH_DATE", "A data de nascimento não pode estar no futuro.");
@@ -48,17 +56,22 @@ async function runSerializableConfirmation(context: AuthContext, input: BirthCon
 
     await tx.lifecycleEvent.create({ data: { organizationId: context.organizationId, customerId: pregnancy.customerId, pregnancyId: pregnancy.id, childId, type: "BIRTH_CONFIRMED", metadata: { actualBirthDate: input.actualBirthDate } } });
     await writeAudit(tx, context, { action: "pregnancy.birth_confirmed", entityType: "Pregnancy", entityId: pregnancy.id, customerId: pregnancy.customerId, metadata: { childId, linkedExistingChild: Boolean(input.existingChildId) } });
+    await hooks?.beforeCommit?.();
     return { childId, pregnancyId: pregnancy.id };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-export async function confirmBirthWithContext(context: AuthContext, rawInput: BirthConfirmationInput) {
+export async function confirmBirthWithContext(
+  context: AuthContext,
+  rawInput: BirthConfirmationInput,
+  hooks?: BirthConfirmationVerificationHooks,
+) {
   assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "birth:confirm");
   const input = birthConfirmationSchema.parse(rawInput);
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await runSerializableConfirmation(context, input);
+      return await runSerializableConfirmation(context, input, hooks);
     } catch (error) {
       lastError = error;
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt < 2) continue;
