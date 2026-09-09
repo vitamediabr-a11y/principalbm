@@ -2,7 +2,9 @@
   "name": "principalbm",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -47,6 +49,11 @@
     "tailwindcss": "4.3.3",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "4.1.11"
+  },
+  "overrides": {
+    "vitest": "4.1.11",
+    "mysql2": "3.23.1",
+    "deepmerge-ts": "8.0.1"
   }
 }
