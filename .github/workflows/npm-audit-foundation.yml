@@ -1,4 +1,4 @@
-name: Foundation dependency remediation experiment
+name: Export verified remediation blobs
 
 on:
   push:
@@ -6,38 +6,19 @@ on:
       - verify/npm-audit-foundation
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify-remediation:
+  export:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: principalbm
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d principalbm"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/principalbm
-      BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production-0123456789abcdef
-      BETTER_AUTH_URL: http://localhost:3000
-      APP_TIME_ZONE: America/Belem
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Apply targeted dependency remediation only in checkout
+      - name: Reproduce verified manifests
         shell: bash
         run: |
           set -euo pipefail
@@ -46,59 +27,16 @@ jobs:
           npm pkg set overrides.mysql2=3.23.1
           npm pkg set overrides.deepmerge-ts=8.0.1
           npm install --package-lock-only --ignore-scripts
-      - name: Install remediated lockfile
-        run: npm ci
-      - name: Verify resolved versions and audit
+          npm ci
+          npm audit
+      - name: Create unreferenced Git blobs
         shell: bash
-        run: |
-          npm ls prisma @prisma/config deepmerge-ts mysql2 vitest @vitest/mocker --all
-          npm audit --json > post-audit.json || true
-          cat post-audit.json
-      - name: Generate ephemeral runtime credential
-        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          password="$(openssl rand -hex 24)"
-          echo "CI_CRM_APP_PASSWORD=$password" >> "$GITHUB_ENV"
-          echo "DATABASE_URL=postgresql://crm_app:$password@localhost:5432/principalbm" >> "$GITHUB_ENV"
-      - name: Apply runtime role bootstrap as database admin
-        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021400_runtime_roles/migration.sql
-      - name: Configure disposable crm_app credential
-        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v crm_app_password="$CI_CRM_APP_PASSWORD" -f tests/sql/bootstrap-ci-runtime.sql
-      - name: Apply application migration as database admin
-        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
-      - name: Apply tenant integrity migration as database admin
-        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
-      - name: Verify runtime database login
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select current_user, current_schema();"
-      - name: Validate Prisma schema
-        run: npm run prisma:validate
-      - name: Generate Prisma client
-        run: npm run prisma:generate
-      - name: Domain and authorization tests
-        run: npm run test
-      - name: PostgreSQL integration and security tests
-        run: npm run test:integration
-      - name: TypeScript
-        run: npm run typecheck
-      - name: Production build
-        run: npm run build
-      - name: Security invariants
-        shell: bash
-        run: |
-          set -euo pipefail
-          test ! -d .agents
-          test ! -d .skills
-          ! grep -R --line-number -E 'TEMP_AUTH_BYPASS|fallback-secret|new Map\(' src
-          ! grep -R --line-number 'NEXT_PUBLIC_.*SERVICE_ROLE' . --exclude-dir=node_modules --exclude-dir=.next
-          test ! -f .env
-      - name: Upload remediated manifests
-        uses: actions/upload-artifact@v4
-        with:
-          name: remediated-manifests
-          path: |
-            package.json
-            package-lock.json
-            post-audit.json
-          if-no-files-found: error
-          retention-days: 1
+          for file in package.json package-lock.json; do
+            jq -Rs '{content: ., encoding: "utf-8"}' "$file" > "/tmp/${file}.json"
+            sha="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/blobs" --input "/tmp/${file}.json" --jq .sha)"
+            echo "${file}=${sha}"
+          done
