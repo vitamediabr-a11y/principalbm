@@ -1,0 +1,314 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["principal"]
+}
+
+enum BusinessRole {
+  OWNER
+  MANAGER
+  SELLER
+  MARKETING
+
+  @@schema("principal")
+}
+
+enum CustomerStatus {
+  CUSTOMER
+  RECURRING
+  VIP
+  INACTIVE
+  DO_NOT_CONTACT
+  ARCHIVED
+
+  @@schema("principal")
+}
+
+enum CustomerSource {
+  PHYSICAL_STORE
+  WHATSAPP
+  INSTAGRAM
+  WEBSITE
+  REFERRAL
+  EVENT
+  OTHER
+
+  @@schema("principal")
+}
+
+enum PregnancyStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+
+  @@schema("principal")
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+  NOT_INFORMED
+
+  @@schema("principal")
+}
+
+enum LifecycleEventType {
+  PREGNANCY_ADDED
+  DUE_DATE_UPDATED
+  BIRTH_CONFIRMED
+  CHILD_ADDED
+  CHILD_UPDATED
+
+  @@schema("principal")
+}
+
+enum ConsentChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+  PHONE
+
+  @@schema("principal")
+}
+
+enum ConsentStatus {
+  GRANTED
+  REVOKED
+
+  @@schema("principal")
+}
+
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  role String? @default("user")
+  banned Boolean? @default(false)
+  banReason String?
+  banExpires DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  accounts Account[]
+  memberships Membership[]
+  auditLogs AuditLog[]
+  @@map("user")
+  @@schema("principal")
+}
+model Session {
+  id String @id @default(uuid()) @db.Uuid
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId String @db.Uuid
+  impersonatedBy String?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("session")
+  @@schema("principal")
+}
+model Account {
+  id String @id @default(uuid()) @db.Uuid
+  accountId String
+  providerId String
+  userId String @db.Uuid
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@unique([providerId, accountId])
+  @@map("account")
+  @@schema("principal")
+}
+model Verification {
+  id String @id @default(uuid()) @db.Uuid
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+  @@map("verification")
+  @@schema("principal")
+}
+model RateLimit {
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique
+  count Int
+  lastRequest BigInt
+  @@map("rate_limit")
+  @@schema("principal")
+}
+model Organization {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships Membership[]
+  customers Customer[]
+  events LifecycleEvent[]
+  auditLogs AuditLog[]
+  @@map("organizations")
+  @@schema("principal")
+}
+model Membership {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  userId String @db.Uuid
+  role BusinessRole
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customers Customer[] @relation("ResponsibleMembership")
+  @@unique([organizationId, userId])
+  @@index([userId, active])
+  @@index([organizationId, role])
+  @@map("memberships")
+  @@schema("principal")
+}
+model Customer {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String @db.VarChar(180)
+  whatsapp String? @db.VarChar(32)
+  whatsappNormalized String? @db.VarChar(20)
+  phone String? @db.VarChar(32)
+  phoneNormalized String? @db.VarChar(20)
+  email String? @db.VarChar(320)
+  city String? @db.VarChar(120)
+  source CustomerSource
+  responsibleMembershipId String? @db.Uuid
+  status CustomerStatus @default(CUSTOMER)
+  registeredAt DateTime @default(now())
+  notes String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  responsibleMembership Membership? @relation("ResponsibleMembership", fields: [responsibleMembershipId], references: [id], onDelete: SetNull)
+  pregnancies Pregnancy[]
+  children Child[]
+  lifecycleEvents LifecycleEvent[]
+  auditLogs AuditLog[]
+  consents Consent[]
+  @@unique([organizationId, whatsappNormalized])
+  @@unique([organizationId, phoneNormalized])
+  @@index([organizationId, name])
+  @@index([organizationId, status])
+  @@index([organizationId, source])
+  @@index([organizationId, responsibleMembershipId])
+  @@map("customers")
+  @@schema("principal")
+}
+model Pregnancy {
+  id String @id @default(uuid()) @db.Uuid
+  customerId String @db.Uuid
+  expectedDueDate DateTime @db.Date
+  reportedPregnancyWeek Int?
+  reportedPregnancyMonth Int?
+  babyName String? @db.VarChar(120)
+  gender Gender?
+  status PregnancyStatus @default(ACTIVE)
+  informationUpdatedAt DateTime @default(now())
+  commercialNotes String?
+  confirmedBirthDate DateTime? @db.Date
+  confirmedChildId String? @unique @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  confirmedChild Child? @relation("ConfirmedBirth", fields: [confirmedChildId], references: [id], onDelete: Restrict)
+  lifecycleEvents LifecycleEvent[]
+  @@index([customerId, status])
+  @@index([expectedDueDate])
+  @@map("pregnancies")
+  @@schema("principal")
+}
+model Child {
+  id String @id @default(uuid()) @db.Uuid
+  customerId String @db.Uuid
+  name String? @db.VarChar(120)
+  birthDate DateTime @db.Date
+  gender Gender?
+  currentSize String? @db.VarChar(20)
+  preferences String?
+  notes String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  confirmedFromPregnancy Pregnancy? @relation("ConfirmedBirth")
+  lifecycleEvents LifecycleEvent[]
+  @@index([customerId, birthDate])
+  @@map("children")
+  @@schema("principal")
+}
+model LifecycleEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  customerId String @db.Uuid
+  pregnancyId String? @db.Uuid
+  childId String? @db.Uuid
+  type LifecycleEventType
+  occurredAt DateTime @default(now())
+  metadata Json?
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  pregnancy Pregnancy? @relation(fields: [pregnancyId], references: [id], onDelete: SetNull)
+  child Child? @relation(fields: [childId], references: [id], onDelete: SetNull)
+  @@index([customerId, occurredAt(sort: Desc)])
+  @@index([organizationId, occurredAt(sort: Desc)])
+  @@map("lifecycle_events")
+  @@schema("principal")
+}
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  actorUserId String? @db.Uuid
+  customerId String? @db.Uuid
+  action String @db.VarChar(80)
+  entityType String @db.VarChar(80)
+  entityId String @db.Uuid
+  metadata Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+  @@schema("principal")
+}
+model Consent {
+  id String @id @default(uuid()) @db.Uuid
+  customerId String @db.Uuid
+  channel ConsentChannel
+  purpose String @db.VarChar(120)
+  status ConsentStatus
+  capturedAt DateTime @default(now())
+  source String? @db.VarChar(120)
+  version String? @db.VarChar(40)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([customerId, channel, purpose])
+  @@map("consents")
+  @@schema("principal")
+}

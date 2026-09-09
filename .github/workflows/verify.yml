@@ -1,0 +1,84 @@
+name: Verify vertical slice
+
+on:
+  push:
+    branches:
+      - build/initial-crm-slice
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: principalbm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d principalbm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/principalbm
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production-0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+      APP_TIME_ZONE: America/Belem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Dependency audit
+        run: npm audit --audit-level=low
+      - name: Generate ephemeral runtime credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="$(openssl rand -hex 24)"
+          echo "CI_CRM_APP_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql://crm_app:$password@localhost:5432/principalbm" >> "$GITHUB_ENV"
+      - name: Apply runtime role bootstrap as database admin
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021400_runtime_roles/migration.sql
+      - name: Configure disposable crm_app credential
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v crm_app_password="$CI_CRM_APP_PASSWORD" -f tests/sql/bootstrap-ci-runtime.sql
+      - name: Apply application migration as database admin
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
+      - name: Apply tenant integrity migration as database admin
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
+      - name: Verify runtime database login
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select current_user, current_schema();"
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Domain and authorization tests
+        run: npm run test
+      - name: PostgreSQL integration and security tests
+        run: npm run test:integration
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Security invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d .agents
+          test ! -d .skills
+          ! grep -R --line-number -E 'TEMP_AUTH_BYPASS|fallback-secret|new Map\(' src
+          ! grep -R --line-number 'NEXT_PUBLIC_.*SERVICE_ROLE' . --exclude-dir=node_modules --exclude-dir=.next
+          test ! -f .env
