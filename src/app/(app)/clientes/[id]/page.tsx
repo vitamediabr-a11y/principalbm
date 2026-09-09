@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowRight, Baby, CalendarDays, History, Target } from "lucide-react";
 import { getCustomer360 } from "@/services/customer-service";
 import { getNextCustomerOpportunityWithContext } from "@/services/journey-opportunity-service";
+import { getContactDecisionWithContext } from "@/services/contact-decision-service";
 import { estimatePregnancy } from "@/services/pregnancy-service";
 import { describeChildJourney } from "@/services/child-service";
 import { AppError } from "@/lib/app-error";
@@ -10,6 +11,7 @@ import { auditActionLabels, journeyEventLabels, opportunityPriorityLabels, sourc
 import { formatDatePtBr } from "@/domain/shared/date-only";
 import { CustomerHeader } from "@/components/customers/customer-header";
 import { CustomerTabs } from "@/components/customers/customer-tabs";
+import { ContactDecisionPanel } from "@/components/opportunities/contact-decision-panel";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -20,6 +22,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   try {
     const { customer, context } = await getCustomer360(id);
     const nextOpportunity = await getNextCustomerOpportunityWithContext(context, id);
+    const nextContactDecision = nextOpportunity ? await getContactDecisionWithContext(context, nextOpportunity.id) : null;
     const activePregnancy = customer.pregnancies.find((pregnancy) => pregnancy.status === "ACTIVE");
     const pregnancyEstimate = activePregnancy ? estimatePregnancy(activePregnancy.expectedDueDate) : null;
     const activeJourneyCount = (activePregnancy ? 1 : 0) + customer.children.length;
@@ -33,7 +36,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <section aria-labelledby="opportunity-summary-title">
         <Card className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Relacionamento</p><h2 id="opportunity-summary-title" className="mt-1 font-bold">Próxima oportunidade</h2></div><Target className="size-5 text-slate-400" /></div>
-          {!nextOpportunity ? <p className="mt-3 text-sm text-slate-500">Nenhuma oportunidade no momento.</p> : <div className="mt-3"><div className="flex flex-wrap items-center gap-2"><Badge>{opportunityPriorityLabels[nextOpportunity.priority]}</Badge><span className="text-sm font-bold">Pontuação {nextOpportunity.score}</span></div><p className="mt-2 text-sm font-semibold text-slate-900">{nextOpportunity.reasonLabel}</p><p className="mt-1 text-sm text-slate-600">{nextOpportunity.journeyEvent.child ? `${nextOpportunity.journeyEvent.child.name ?? "Criança"} — ` : "Gestação — "}{journeyEventLabels[nextOpportunity.journeyEvent.type]}</p><p className="mt-2 text-xs text-slate-500">Momento recomendado: {formatDatePtBr(nextOpportunity.recommendedAt)}</p><Link href={`/clientes/${customer.id}/oportunidades`} data-qa-hit-target="primary" className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-slate-700 hover:underline">Ver oportunidades <ArrowRight className="size-4" /></Link></div>}
+          {!nextOpportunity ? <p className="mt-3 text-sm text-slate-500">Nenhuma oportunidade no momento.</p> : <div className="mt-3"><div className="flex flex-wrap items-center gap-2"><Badge>{opportunityPriorityLabels[nextOpportunity.priority]}</Badge><span className="text-sm font-bold">Pontuação {nextOpportunity.score}</span></div><p className="mt-2 text-sm font-semibold text-slate-900">{nextOpportunity.reasonLabel}</p><p className="mt-1 text-sm text-slate-600">{nextOpportunity.journeyEvent.child ? `${nextOpportunity.journeyEvent.child.name ?? "Criança"} — ` : "Gestação — "}{journeyEventLabels[nextOpportunity.journeyEvent.type]}</p><p className="mt-2 text-xs text-slate-500">Momento recomendado: {formatDatePtBr(nextOpportunity.recommendedAt)}</p><div className="mt-4"><ContactDecisionPanel decision={nextContactDecision} showEvidence /></div><Link href={`/clientes/${customer.id}/oportunidades`} data-qa-hit-target="primary" className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-slate-700 hover:underline">Ver oportunidades <ArrowRight className="size-4" /></Link></div>}
         </Card>
       </section>
 

@@ -9,6 +9,8 @@ export type Permission =
   | "birth:confirm"
   | "opportunity:view"
   | "opportunity:manage"
+  | "contact-decision:view"
+  | "contact-decision:evaluate"
   | "report:view"
   | "team:manage"
   | "privacy:manage"
@@ -23,6 +25,8 @@ const allPermissions: Permission[] = [
   "birth:confirm",
   "opportunity:view",
   "opportunity:manage",
+  "contact-decision:view",
+  "contact-decision:evaluate",
   "report:view",
   "team:manage",
   "privacy:manage",
@@ -40,6 +44,8 @@ export const permissionsByRole: Record<BusinessRole, readonly Permission[]> = {
     "birth:confirm",
     "opportunity:view",
     "opportunity:manage",
+    "contact-decision:view",
+    "contact-decision:evaluate",
     "report:view",
     "team:manage",
     "privacy:manage",
@@ -53,8 +59,10 @@ export const permissionsByRole: Record<BusinessRole, readonly Permission[]> = {
     "birth:confirm",
     "opportunity:view",
     "opportunity:manage",
+    "contact-decision:view",
+    "contact-decision:evaluate",
   ],
-  MARKETING: ["customer:view", "lifecycle:view", "opportunity:view", "report:view"],
+  MARKETING: ["customer:view", "lifecycle:view", "opportunity:view", "contact-decision:view", "report:view"],
 };
 
 export function hasPermission(role: BusinessRole, permission: Permission) {

@@ -46,6 +46,8 @@ describe("least-privilege runtime and RLS", () => {
   it("denies private CRM reads to anon and authenticated", async () => {
     await expectRoleDenied("anon", "SELECT id FROM principal.customers LIMIT 1");
     await expectRoleDenied("authenticated", "SELECT id FROM principal.customers LIMIT 1");
+    await expectRoleDenied("anon", "SELECT id FROM principal.contact_decisions LIMIT 1");
+    await expectRoleDenied("authenticated", "SELECT id FROM principal.contact_decisions LIMIT 1");
   });
 
   it("grants crm_runtime only the intended table operations", async () => {
@@ -54,6 +56,10 @@ describe("least-privilege runtime and RLS", () => {
       customers_insert: boolean;
       customers_update: boolean;
       customers_delete: boolean;
+      decisions_select: boolean;
+      decisions_insert: boolean;
+      decisions_update: boolean;
+      decisions_delete: boolean;
       org_delete: boolean;
       audit_select: boolean;
       audit_insert: boolean;
@@ -65,6 +71,10 @@ describe("least-privilege runtime and RLS", () => {
         has_table_privilege('crm_runtime','principal.customers','INSERT') AS customers_insert,
         has_table_privilege('crm_runtime','principal.customers','UPDATE') AS customers_update,
         has_table_privilege('crm_runtime','principal.customers','DELETE') AS customers_delete,
+        has_table_privilege('crm_runtime','principal.contact_decisions','SELECT') AS decisions_select,
+        has_table_privilege('crm_runtime','principal.contact_decisions','INSERT') AS decisions_insert,
+        has_table_privilege('crm_runtime','principal.contact_decisions','UPDATE') AS decisions_update,
+        has_table_privilege('crm_runtime','principal.contact_decisions','DELETE') AS decisions_delete,
         has_table_privilege('crm_runtime','principal.organizations','DELETE') AS org_delete,
         has_table_privilege('crm_runtime','principal.audit_logs','SELECT') AS audit_select,
         has_table_privilege('crm_runtime','principal.audit_logs','INSERT') AS audit_insert,
@@ -76,6 +86,10 @@ describe("least-privilege runtime and RLS", () => {
       customers_insert: true,
       customers_update: true,
       customers_delete: true,
+      decisions_select: true,
+      decisions_insert: true,
+      decisions_update: true,
+      decisions_delete: true,
       org_delete: false,
       audit_select: true,
       audit_insert: true,
@@ -89,7 +103,7 @@ describe("least-privilege runtime and RLS", () => {
   });
 
   it("enables RLS on private tables while keeping backend tenant isolation explicitly application-scoped", async () => {
-    const expectedTables = ["user", "session", "account", "verification", "rate_limit", "organizations", "memberships", "customers", "pregnancies", "children", "lifecycle_events", "journey_events", "opportunities", "audit_logs", "consents"].sort();
+    const expectedTables = ["user", "session", "account", "verification", "rate_limit", "organizations", "memberships", "customers", "pregnancies", "children", "lifecycle_events", "journey_events", "opportunities", "contact_decisions", "audit_logs", "consents"].sort();
     const tables = await adminPool.query<{ relname: string; relrowsecurity: boolean; owner: string }>(`
       SELECT c.relname, c.relrowsecurity, pg_get_userbyid(c.relowner) AS owner
       FROM pg_class c

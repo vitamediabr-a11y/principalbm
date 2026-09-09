@@ -114,6 +114,15 @@ enum OpportunityPriority {
   @@schema("principal")
 }
 
+enum ContactDecisionStatus {
+  PROCEED
+  WAIT
+  BLOCKED
+  SUPPRESSED
+
+  @@schema("principal")
+}
+
 enum ConsentChannel {
   WHATSAPP
   EMAIL
@@ -213,6 +222,7 @@ model Organization {
   events LifecycleEvent[]
   journeyEvents JourneyEvent[]
   opportunities Opportunity[]
+  contactDecisions ContactDecision[]
   auditLogs AuditLog[]
   @@map("organizations")
   @@schema("principal")
@@ -259,6 +269,7 @@ model Customer {
   lifecycleEvents LifecycleEvent[]
   journeyEvents JourneyEvent[]
   opportunities Opportunity[]
+  contactDecisions ContactDecision[]
   auditLogs AuditLog[]
   consents Consent[]
   @@unique([organizationId, whatsappNormalized])
@@ -379,10 +390,38 @@ model Opportunity {
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   journeyEvent JourneyEvent @relation(fields: [journeyEventId], references: [id], onDelete: Cascade)
   responsibleMembership Membership? @relation("OpportunityResponsible", fields: [responsibleMembershipId], references: [id], onDelete: SetNull)
+  contactDecision ContactDecision? @relation("ContactDecisionOpportunity")
+  suppressedContactDecisions ContactDecision[] @relation("ContactDecisionSuppressedBy")
+  @@unique([id, customerId, organizationId], map: "opportunities_id_customer_org_key")
   @@index([organizationId, status, priority, score, recommendedAt], map: "opportunities_org_status_priority_score_date_idx")
   @@index([customerId, status, recommendedAt])
   @@index([responsibleMembershipId, status])
   @@map("opportunities")
+  @@schema("principal")
+}
+model ContactDecision {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  customerId String @db.Uuid
+  opportunityId String @unique @db.Uuid
+  status ContactDecisionStatus
+  channel ConsentChannel @default(WHATSAPP)
+  evaluatedAt DateTime
+  eligibleAt DateTime? @db.Date
+  primaryReasonCode String @db.VarChar(80)
+  reasonsJson Json
+  suppressedByOpportunityId String? @db.Uuid
+  policyVersion Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation("ContactDecisionOpportunity", fields: [opportunityId], references: [id], onDelete: Cascade)
+  suppressedByOpportunity Opportunity? @relation("ContactDecisionSuppressedBy", fields: [suppressedByOpportunityId], references: [id], onDelete: Cascade)
+  @@index([organizationId, status, evaluatedAt])
+  @@index([customerId, status])
+  @@index([suppressedByOpportunityId])
+  @@map("contact_decisions")
   @@schema("principal")
 }
 model AuditLog {

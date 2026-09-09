@@ -78,6 +78,13 @@ export const opportunityStatusLabels: Record<string, string> = {
   RESOLVED: "Resolvida",
 };
 
+export const contactDecisionStatusLabels: Record<string, string> = {
+  PROCEED: "Pode avançar",
+  WAIT: "Aguardar",
+  BLOCKED: "Bloqueado",
+  SUPPRESSED: "Suprimido",
+};
+
 export const auditActionLabels: Record<string, string> = {
   "customer.created": "Cliente criado",
   "customer.updated": "Cliente atualizado",
@@ -90,4 +97,6 @@ export const auditActionLabels: Record<string, string> = {
   "opportunity.snoozed": "Oportunidade adiada",
   "opportunity.dismissed": "Oportunidade ignorada",
   "opportunity.resolved": "Oportunidade resolvida",
+  "contact_decision.created": "Decisão de contato criada",
+  "contact_decision.changed": "Decisão de contato atualizada",
 };

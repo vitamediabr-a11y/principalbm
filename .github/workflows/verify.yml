@@ -5,6 +5,7 @@ on:
     branches:
       - build/initial-crm-slice
       - build/journey-event-opportunity
+      - build/opportunity-contact-decision
   pull_request:
     branches:
       - main
@@ -63,6 +64,8 @@ jobs:
         run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
       - name: Apply journey event and opportunity migration
         run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909143000_journey_event_opportunity/migration.sql
+      - name: Apply contact decision migration
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909210000_contact_decision/migration.sql
       - name: Verify runtime database login
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select current_user, current_schema();"
       - name: Validate Prisma schema

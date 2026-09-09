@@ -1,10 +1,11 @@
 import Link from "next/link";
-import type { Prisma } from "@/generated/prisma/client";
+import type { ContactDecision, Prisma } from "@/generated/prisma/client";
 import { CalendarClock, ChevronRight } from "lucide-react";
 import { dateOnlyFromInstant, diffCalendarDays, formatDatePtBr } from "@/domain/shared/date-only";
 import { env } from "@/lib/env";
 import { journeyEventLabels, opportunityPriorityLabels, opportunityStatusLabels } from "@/lib/labels";
 import { dismissOpportunityAction, snoozeOpportunityAction } from "@/app/actions/opportunity-actions";
+import { ContactDecisionPanel } from "@/components/opportunities/contact-decision-panel";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
@@ -52,7 +53,15 @@ function sourceLabel(item: OpportunityCardItem) {
   return `Gestação — ${journeyEventLabels[item.journeyEvent.type]}`;
 }
 
-export function OpportunityCard({ opportunity, canManage }: { opportunity: OpportunityCardItem; canManage: boolean }) {
+export function OpportunityCard({
+  opportunity,
+  canManage,
+  contactDecision,
+}: {
+  opportunity: OpportunityCardItem;
+  canManage: boolean;
+  contactDecision: ContactDecision | null;
+}) {
   const factors = explanationFactors(opportunity.scoreExplanation);
   const actionable = opportunity.status === "OPEN" || opportunity.status === "SNOOZED";
 
@@ -72,7 +81,9 @@ export function OpportunityCard({ opportunity, canManage }: { opportunity: Oppor
           <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Momento recomendado</p><p className="mt-1 flex items-center gap-2 text-sm font-semibold text-slate-800"><CalendarClock className="size-4 shrink-0 text-slate-400" />{timingLabel(opportunity.recommendedAt)}</p></div>
         </div>
 
-        <div className="mt-4 rounded-xl bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Ação sugerida</p><p className="mt-1 text-sm text-slate-800">{opportunity.suggestedAction}</p><p className="mt-2 text-xs text-slate-500">Canal de contato ainda não foi validado nesta etapa.</p></div>
+        <div className="mt-4 rounded-xl bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Ação sugerida</p><p className="mt-1 text-sm text-slate-800">{opportunity.suggestedAction}</p>{!contactDecision && <p className="mt-2 text-xs text-slate-500">Canal de contato ainda não foi validado nesta etapa.</p>}</div>
+
+        <div className="mt-4"><ContactDecisionPanel decision={contactDecision} /></div>
 
         {factors.length > 0 && <details className="mt-3"><summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-slate-700">Por que esta pontuação?</summary><ul className="space-y-1 text-sm text-slate-600">{factors.map((factor) => <li key={factor.label} className="flex justify-between gap-4"><span>{factor.label}</span><span className="font-semibold">+{factor.points}</span></li>)}</ul></details>}
 

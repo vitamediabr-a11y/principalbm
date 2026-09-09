@@ -5,6 +5,7 @@ on:
     branches:
       - build/initial-crm-slice
       - build/journey-event-opportunity
+      - build/opportunity-contact-decision
   pull_request:
     branches:
       - main
@@ -15,7 +16,7 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     services:
       postgres:
         image: postgres:17
@@ -69,6 +70,7 @@ jobs:
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909143000_journey_event_opportunity/migration.sql
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909210000_contact_decision/migration.sql
       - name: Generate Prisma client
         run: npm run prisma:generate
       - name: Bootstrap disposable Owner
@@ -84,6 +86,15 @@ jobs:
           output="$(npx tsx tests/e2e/opportunity-seed.ts)"
           echo "$output" | grep '^OPPORTUNITY_CUSTOMER_ID=' >> "$GITHUB_ENV"
           echo "$output" | grep '^OPPORTUNITY_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
+      - name: Seed disposable contact decision visual states
+        shell: bash
+        run: |
+          output="$(npx tsx tests/e2e/contact-decision-seed.ts)"
+          echo "$output" | grep '^CONTACT_DECISION_PRIMARY_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_FUTURE_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_MISSING_CONSENT_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_DNC_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^CONTACT_DECISION_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
       - name: Production build
         run: npm run build
       - name: Install Chromium
@@ -105,6 +116,8 @@ jobs:
         run: node tests/e2e/foundation-browser-acceptance.mjs
       - name: Verify opportunity slice matrix in Chromium
         run: node tests/e2e/opportunity-browser-acceptance.mjs
+      - name: Verify contact decision slice matrix in Chromium
+        run: node tests/e2e/contact-decision-browser-acceptance.mjs
       - name: Show server errors
         if: always()
         shell: bash
