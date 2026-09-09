@@ -8,14 +8,80 @@ datasource db {
   schemas  = ["principal"]
 }
 
-enum BusinessRole { OWNER MANAGER SELLER MARKETING @@schema("principal") }
-enum CustomerStatus { CUSTOMER RECURRING VIP INACTIVE DO_NOT_CONTACT ARCHIVED @@schema("principal") }
-enum CustomerSource { PHYSICAL_STORE WHATSAPP INSTAGRAM WEBSITE REFERRAL EVENT OTHER @@schema("principal") }
-enum PregnancyStatus { ACTIVE COMPLETED ARCHIVED @@schema("principal") }
-enum Gender { FEMALE MALE OTHER NOT_INFORMED @@schema("principal") }
-enum LifecycleEventType { PREGNANCY_ADDED DUE_DATE_UPDATED BIRTH_CONFIRMED CHILD_ADDED CHILD_UPDATED @@schema("principal") }
-enum ConsentChannel { WHATSAPP EMAIL SMS PHONE @@schema("principal") }
-enum ConsentStatus { GRANTED REVOKED @@schema("principal") }
+enum BusinessRole {
+  OWNER
+  MANAGER
+  SELLER
+  MARKETING
+
+  @@schema("principal")
+}
+
+enum CustomerStatus {
+  CUSTOMER
+  RECURRING
+  VIP
+  INACTIVE
+  DO_NOT_CONTACT
+  ARCHIVED
+
+  @@schema("principal")
+}
+
+enum CustomerSource {
+  PHYSICAL_STORE
+  WHATSAPP
+  INSTAGRAM
+  WEBSITE
+  REFERRAL
+  EVENT
+  OTHER
+
+  @@schema("principal")
+}
+
+enum PregnancyStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+
+  @@schema("principal")
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+  NOT_INFORMED
+
+  @@schema("principal")
+}
+
+enum LifecycleEventType {
+  PREGNANCY_ADDED
+  DUE_DATE_UPDATED
+  BIRTH_CONFIRMED
+  CHILD_ADDED
+  CHILD_UPDATED
+
+  @@schema("principal")
+}
+
+enum ConsentChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+  PHONE
+
+  @@schema("principal")
+}
+
+enum ConsentStatus {
+  GRANTED
+  REVOKED
+
+  @@schema("principal")
+}
 
 model User {
   id String @id @default(uuid()) @db.Uuid
