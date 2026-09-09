@@ -2,10 +2,11 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/app-error";
+import { assertAuthorized } from "@/lib/authorization";
 import { dateOnlyFromInstant, parseDateOnly } from "@/domain/shared/date-only";
 import { pregnancyInputSchema, type PregnancyInput } from "@/domain/pregnancy/schemas";
 import { calculatePregnancyEstimate } from "@/domain/pregnancy/pregnancy";
-import { requirePermission } from "@/services/auth-context";
+import { requireAuthContext, type AuthContext } from "@/services/auth-context";
 import { writeAudit } from "@/services/audit-service";
 
 function blankToNull(value?: string) {
@@ -20,8 +21,8 @@ function mapActivePregnancyConflict(error: unknown): never {
   throw error;
 }
 
-export async function createPregnancy(customerId: string, rawInput: PregnancyInput) {
-  const context = await requirePermission("lifecycle:edit");
+export async function createPregnancyWithContext(context: AuthContext, customerId: string, rawInput: PregnancyInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "lifecycle:edit");
   const input = pregnancyInputSchema.parse(rawInput);
   const customer = await prisma.customer.findFirst({ where: { id: customerId, organizationId: context.organizationId }, select: { id: true } });
   if (!customer) throw new AppError(404, "CUSTOMER_NOT_FOUND", "Cliente não encontrado.");
@@ -62,8 +63,12 @@ export async function createPregnancy(customerId: string, rawInput: PregnancyInp
   }
 }
 
-export async function updatePregnancy(pregnancyId: string, rawInput: PregnancyInput) {
-  const context = await requirePermission("lifecycle:edit");
+export async function createPregnancy(customerId: string, rawInput: PregnancyInput) {
+  return createPregnancyWithContext(await requireAuthContext(), customerId, rawInput);
+}
+
+export async function updatePregnancyWithContext(context: AuthContext, pregnancyId: string, rawInput: PregnancyInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "lifecycle:edit");
   const input = pregnancyInputSchema.parse(rawInput);
   const pregnancy = await prisma.pregnancy.findFirst({
     where: { id: pregnancyId, customer: { organizationId: context.organizationId } },
@@ -107,6 +112,10 @@ export async function updatePregnancy(pregnancyId: string, rawInput: PregnancyIn
     });
     return updated;
   });
+}
+
+export async function updatePregnancy(pregnancyId: string, rawInput: PregnancyInput) {
+  return updatePregnancyWithContext(await requireAuthContext(), pregnancyId, rawInput);
 }
 
 export function estimatePregnancy(expectedDueDate: Date) {
