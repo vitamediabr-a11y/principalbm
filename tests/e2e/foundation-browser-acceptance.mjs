@@ -35,7 +35,6 @@ async function readMetrics(page, width, label) {
       const s = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden";
     };
-
     const allInteractive = [...document.querySelectorAll('button,a[href],input,select,textarea,summary,[role="button"]')]
       .filter(visible)
       .map((el) => {
@@ -49,14 +48,12 @@ async function readMetrics(page, width, label) {
           primaryLink: el.getAttribute("data-qa-hit-target") === "primary"
         };
       });
-
     const enforced = allInteractive.filter((x) => ["BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"].includes(x.tag) || x.uiButton || x.primaryLink);
     const english = [...new Set((document.body.innerText.match(/\b(Save|Cancel|Edit|Search|Customer|Customers|Children|Pregnancy|Birth|Loading|Submit|Delete|Clear|Next|Previous|No results)\b/g) || []))];
     const primaryNames = allInteractive.filter((x) => x.primaryLink || x.uiButton || x.tag === "BUTTON").map((x) => x.name);
     const nav = document.querySelector("[data-qa-mobile-nav]");
     const navRect = nav && visible(nav) ? nav.getBoundingClientRect() : null;
     const navStyle = nav && visible(nav) ? getComputedStyle(nav) : null;
-
     return {
       viewport: innerWidth,
       scrollWidth: root.scrollWidth,
@@ -79,14 +76,12 @@ async function readMetrics(page, width, label) {
 
   if (metrics.overflowX) fail("horizontal_overflow", { width, label, scrollWidth: metrics.scrollWidth });
   if (metrics.english.length) fail("english_leakage", { width, label, tokens: metrics.english });
-
   if (width < 600 && label !== "login") {
     if (!metrics.nav.present || metrics.nav.position !== "fixed") fail("mobile_navigation_missing", { width, label, nav: metrics.nav });
     if (metrics.enforcedSmall.length) fail("touch_target", { width, label, controls: metrics.enforcedSmall });
     const missing = expectedPrimary(label).filter((name) => !metrics.primaryNames.includes(name));
     if (missing.length) fail("primary_control_missing", { width, label, missing, found: metrics.primaryNames });
   }
-
   return metrics;
 }
 
@@ -142,22 +137,34 @@ async function capture(page, width, label, route, navigate = true) {
   report.pages.push({ width, label, route, url: page.url(), status: response?.status() ?? null, screenshot: file, metrics, reachability });
 }
 
-async function authenticate(page, width) {
-  await page.goto(base + "/login", { waitUntil: "networkidle" });
+async function inspectLoginInput(page) {
   const email = page.getByLabel("E-mail");
-  const password = page.getByLabel("Senha");
   await email.focus();
-  const input = await email.evaluate((el) => ({ type: el.type, inputMode: el.inputMode, autocomplete: el.autocomplete, focused: document.activeElement === el }));
-  await email.fill(process.env.BOOTSTRAP_OWNER_EMAIL);
-  await password.fill(process.env.BOOTSTRAP_OWNER_PASSWORD);
+  return email.evaluate((el) => ({
+    type: el.type,
+    inputMode: el.inputMode,
+    autocomplete: el.autocomplete,
+    focused: document.activeElement === el
+  }));
+}
+
+async function authenticateOwnerOnce(browser) {
+  const context = await browser.newContext({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  await page.goto(base + "/login", { waitUntil: "networkidle" });
+  await page.getByLabel("E-mail").fill(process.env.BOOTSTRAP_OWNER_EMAIL);
+  await page.getByLabel("Senha").fill(process.env.BOOTSTRAP_OWNER_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
+  let success = true;
   try {
     await page.waitForURL("**/clientes", { timeout: 15000 });
-    report.auth[width] = { success: true, input };
   } catch {
-    report.auth[width] = { success: false, input, url: page.url() };
-    fail("authentication_failure", { width, url: page.url() });
+    success = false;
+    fail("authentication_failure", { phase: "foundation_owner_bootstrap", url: page.url() });
   }
+  const storageState = success ? await context.storageState() : null;
+  await context.close();
+  return storageState;
 }
 
 async function verifySearch(page, width) {
@@ -170,7 +177,6 @@ async function verifySearch(page, width) {
     report.search.widths.push(result);
     return;
   }
-
   await search.fill("Maria da Conceição");
   await search.press("Enter");
   await page.waitForLoadState("networkidle");
@@ -195,7 +201,6 @@ async function verifySearch(page, width) {
   result.restored = restoredBody.includes(customerName) && !emptyStateVisible;
   if (!result.restored) fail("search_clear_restore_failed", { width, url: page.url() });
   await capture(page, width, "clientes-busca-restaurada", "/clientes", false);
-
   report.search.widths.push(result);
 }
 
@@ -218,14 +223,38 @@ async function captureExpanded(page, width, route, summaryName, label) {
 fs.mkdirSync("ui-artifacts/screenshots", { recursive: true });
 const browser = await chromium.launch({ headless: true });
 try {
+  const loginInputs = {};
   for (const width of widths) {
-    const context = await browser.newContext({ viewport: { width, height: width === 1280 ? 800 : 844 }, isMobile: width < 600, hasTouch: width < 600 });
-    const page = await context.newPage();
-    page.on("pageerror", (error) => report.pageErrors.push({ width, message: error.message }));
+    const loginContext = await browser.newContext({
+      viewport: { width, height: width === 1280 ? 800 : 844 },
+      isMobile: width < 600,
+      hasTouch: width < 600
+    });
+    const loginPage = await loginContext.newPage();
+    loginPage.on("pageerror", (error) => report.pageErrors.push({ width, phase: "login", message: error.message }));
+    await capture(loginPage, width, "login", "/login");
+    loginInputs[width] = await inspectLoginInput(loginPage);
+    await loginContext.close();
+  }
 
-    await capture(page, width, "login", "/login");
-    await authenticate(page, width);
-    if (!report.auth[width]?.success) {
+  const storageState = await authenticateOwnerOnce(browser);
+  if (!storageState) throw new Error("Foundation Owner authentication failed.");
+
+  for (const width of widths) {
+    const context = await browser.newContext({
+      viewport: { width, height: width === 1280 ? 800 : 844 },
+      isMobile: width < 600,
+      hasTouch: width < 600,
+      storageState
+    });
+    const page = await context.newPage();
+    page.on("pageerror", (error) => report.pageErrors.push({ width, phase: "authenticated", message: error.message }));
+
+    const authProbe = await page.goto(base + "/clientes", { waitUntil: "networkidle" });
+    const authSuccess = Boolean(authProbe && authProbe.status() < 400 && new URL(page.url()).pathname !== "/login");
+    report.auth[width] = { success: authSuccess, input: loginInputs[width] };
+    if (!authSuccess) {
+      fail("authentication_failure", { width, url: page.url(), status: authProbe?.status() ?? null });
       await context.close();
       continue;
     }
