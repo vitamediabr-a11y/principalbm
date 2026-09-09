@@ -90,8 +90,8 @@ enum JourneyEventType {
 enum JourneyEventStatus {
   UPCOMING
   DUE
-  PROCESSED
-  DISMISSED
+  EXPIRED
+  SUPERSEDED
 
   @@schema("principal")
 }
@@ -289,7 +289,6 @@ model Pregnancy {
   confirmedChild Child? @relation("ConfirmedBirth", fields: [confirmedChildId], references: [id], onDelete: Restrict)
   lifecycleEvents LifecycleEvent[]
   journeyEvents JourneyEvent[]
-  opportunities Opportunity[]
   @@index([customerId, status])
   @@index([expectedDueDate])
   @@map("pregnancies")
@@ -310,7 +309,6 @@ model Child {
   confirmedFromPregnancy Pregnancy? @relation("ConfirmedBirth")
   lifecycleEvents LifecycleEvent[]
   journeyEvents JourneyEvent[]
-  opportunities Opportunity[]
   @@index([customerId, birthDate])
   @@map("children")
   @@schema("principal")
@@ -365,8 +363,6 @@ model Opportunity {
   organizationId String @db.Uuid
   customerId String @db.Uuid
   journeyEventId String @unique @db.Uuid
-  pregnancyId String? @db.Uuid
-  childId String? @db.Uuid
   reasonCode String @db.VarChar(80)
   reasonLabel String @db.VarChar(220)
   recommendedAt DateTime @db.Date
@@ -382,8 +378,6 @@ model Opportunity {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   journeyEvent JourneyEvent @relation(fields: [journeyEventId], references: [id], onDelete: Cascade)
-  pregnancy Pregnancy? @relation(fields: [pregnancyId], references: [id], onDelete: Restrict)
-  child Child? @relation(fields: [childId], references: [id], onDelete: Restrict)
   responsibleMembership Membership? @relation("OpportunityResponsible", fields: [responsibleMembershipId], references: [id], onDelete: SetNull)
   @@index([organizationId, status, priority, score, recommendedAt])
   @@index([customerId, status, recommendedAt])

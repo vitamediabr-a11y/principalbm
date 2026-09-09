@@ -21,7 +21,7 @@ export const journeyEventTypes = [
 ] as const;
 
 export type JourneyEventTypeCode = (typeof journeyEventTypes)[number];
-export type JourneyEventStatusCode = "UPCOMING" | "DUE" | "PROCESSED" | "DISMISSED";
+export type JourneyEventStatusCode = "UPCOMING" | "DUE" | "EXPIRED" | "SUPERSEDED";
 export type JourneySource = "PREGNANCY" | "CHILD";
 
 export type JourneyEventCandidate = {
@@ -128,7 +128,7 @@ export function classifyJourneyEventStatus(
   if (daysPast < 0) return "UPCOMING";
   if (type === "PREGNANCY_UPDATE_REQUIRED") return "DUE";
   if (daysPast <= 45) return "DUE";
-  return "PROCESSED";
+  return "EXPIRED";
 }
 
 export function isOpportunityActionable(

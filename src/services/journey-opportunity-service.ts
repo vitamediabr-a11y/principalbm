@@ -34,6 +34,48 @@ function sourceFor(candidate: JourneyEventCandidate) {
     : { pregnancyId: null, childId: candidate.sourceId };
 }
 
+type EngineResolutionReason =
+  | "journey_event_expired"
+  | "journey_event_superseded"
+  | "customer_not_actionable";
+
+async function resolveActiveOpportunities(
+  tx: Prisma.TransactionClient,
+  context: AuthContext,
+  customerId: string,
+  extraWhere: Prisma.OpportunityWhereInput,
+  reason: EngineResolutionReason,
+) {
+  const opportunities = await tx.opportunity.findMany({
+    where: {
+      AND: [
+        {
+          organizationId: context.organizationId,
+          customerId,
+          status: { in: ["OPEN", "SNOOZED"] },
+        },
+        extraWhere,
+      ],
+    },
+    select: { id: true, customerId: true, journeyEventId: true },
+  });
+
+  for (const opportunity of opportunities) {
+    const updated = await tx.opportunity.updateMany({
+      where: { id: opportunity.id, status: { in: ["OPEN", "SNOOZED"] } },
+      data: { status: "RESOLVED", snoozedUntil: null },
+    });
+    if (updated.count !== 1) continue;
+    await writeAudit(tx, context, {
+      action: "opportunity.resolved",
+      entityType: "Opportunity",
+      entityId: opportunity.id,
+      customerId: opportunity.customerId,
+      metadata: { origin: "engine", reason, journeyEventId: opportunity.journeyEventId },
+    });
+  }
+}
+
 async function ensureOpportunity(
   tx: Prisma.TransactionClient,
   context: AuthContext,
@@ -46,8 +88,6 @@ async function ensureOpportunity(
     id: string;
     type: JourneyEventTypeCode;
     effectiveAt: Date;
-    pregnancyId: string | null;
-    childId: string | null;
   },
   candidate: JourneyEventCandidate,
   today: Date,
@@ -65,8 +105,6 @@ async function ensureOpportunity(
     organizationId: context.organizationId,
     customerId: customer.id,
     journeyEventId: event.id,
-    pregnancyId: event.pregnancyId,
-    childId: event.childId,
     reasonCode: definition.reasonCode,
     reasonLabel: definition.reasonLabel,
     recommendedAt: event.effectiveAt,
@@ -91,12 +129,14 @@ async function ensureOpportunity(
     return opportunity;
   }
 
-  const shouldReopen = opportunity.status === "SNOOZED" && opportunity.snoozedUntil && diffCalendarDays(today, opportunity.snoozedUntil) >= 0;
+  const shouldReopen =
+    opportunity.status === "SNOOZED" &&
+    opportunity.snoozedUntil &&
+    diffCalendarDays(today, opportunity.snoozedUntil) >= 0;
+
   return tx.opportunity.update({
     where: { id: opportunity.id },
     data: {
-      pregnancyId: event.pregnancyId,
-      childId: event.childId,
       reasonCode: definition.reasonCode,
       reasonLabel: definition.reasonLabel,
       recommendedAt: event.effectiveAt,
@@ -115,14 +155,14 @@ export async function refreshJourneyEventsForCustomerWithContext(
   customerId: string,
   instant = new Date(),
 ) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:view");
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:manage",
+  );
   const today = asOfDate(instant);
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, organizationId: context.organizationId },
-    include: {
-      pregnancies: true,
-      children: true,
-    },
+    include: { pregnancies: true, children: true },
   });
   if (!customer) throw new AppError(404, "CUSTOMER_NOT_FOUND", "Cliente não encontrado.");
 
@@ -130,30 +170,32 @@ export async function refreshJourneyEventsForCustomerWithContext(
     ...customer.pregnancies.flatMap((pregnancy) => derivePregnancyEventCandidates(pregnancy, today)),
     ...customer.children.flatMap((child) => deriveChildEventCandidates(child)),
   ];
-  const currentKeys = candidates.map((candidate) => buildJourneyEventDedupeKey({
-    customerId: customer.id,
-    source: candidate.source,
-    sourceId: candidate.sourceId,
-    type: candidate.type,
-    effectiveAt: candidate.effectiveAt,
-    ruleVersion: JOURNEY_RULE_VERSION,
-  }));
+  const currentKeys = candidates.map((candidate) =>
+    buildJourneyEventDedupeKey({
+      customerId: customer.id,
+      source: candidate.source,
+      sourceId: candidate.sourceId,
+      type: candidate.type,
+      effectiveAt: candidate.effectiveAt,
+      ruleVersion: JOURNEY_RULE_VERSION,
+    }),
+  );
 
   return prisma.$transaction(async (tx) => {
-    if (currentKeys.length === 0) {
+    const obsoleteEvents = await tx.journeyEvent.findMany({
+      where: {
+        organizationId: context.organizationId,
+        customerId: customer.id,
+        status: { in: ["UPCOMING", "DUE"] },
+        ...(currentKeys.length ? { dedupeKey: { notIn: currentKeys } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (obsoleteEvents.length) {
       await tx.journeyEvent.updateMany({
-        where: { organizationId: context.organizationId, customerId: customer.id, status: { in: ["UPCOMING", "DUE"] } },
-        data: { status: "DISMISSED" },
-      });
-    } else {
-      await tx.journeyEvent.updateMany({
-        where: {
-          organizationId: context.organizationId,
-          customerId: customer.id,
-          status: { in: ["UPCOMING", "DUE"] },
-          dedupeKey: { notIn: currentKeys },
-        },
-        data: { status: "DISMISSED" },
+        where: { id: { in: obsoleteEvents.map((event) => event.id) } },
+        data: { status: "SUPERSEDED" },
       });
     }
 
@@ -168,13 +210,12 @@ export async function refreshJourneyEventsForCustomerWithContext(
         ruleVersion: JOURNEY_RULE_VERSION,
       });
       const status = classifyJourneyEventStatus(candidate.type, candidate.effectiveAt, today);
-      const eventSource = sourceFor(candidate);
       const event = await tx.journeyEvent.upsert({
         where: { organizationId_dedupeKey: { organizationId: context.organizationId, dedupeKey } },
         create: {
           organizationId: context.organizationId,
           customerId: customer.id,
-          ...eventSource,
+          ...sourceFor(candidate),
           type: candidate.type,
           effectiveAt: candidate.effectiveAt,
           status,
@@ -182,7 +223,7 @@ export async function refreshJourneyEventsForCustomerWithContext(
           ruleVersion: JOURNEY_RULE_VERSION,
         },
         update: {
-          ...eventSource,
+          ...sourceFor(candidate),
           effectiveAt: candidate.effectiveAt,
           status,
           ruleVersion: JOURNEY_RULE_VERSION,
@@ -194,22 +235,30 @@ export async function refreshJourneyEventsForCustomerWithContext(
         customerAllowsActionableOpportunity(customer.status) &&
         isOpportunityActionable(candidate.type, status, candidate.effectiveAt, today)
       ) {
-        await ensureOpportunity(tx, context, customer, { ...event, type: candidate.type }, candidate, today);
+        await ensureOpportunity(tx, context, customer, { id: event.id, type: candidate.type, effectiveAt: event.effectiveAt }, candidate, today);
       }
     }
 
-    await tx.opportunity.updateMany({
-      where: {
-        organizationId: context.organizationId,
-        customerId: customer.id,
-        status: { in: ["OPEN", "SNOOZED"] },
-        OR: [
-          { journeyEvent: { status: { in: ["PROCESSED", "DISMISSED"] } } },
-          ...(!customerAllowsActionableOpportunity(customer.status) ? [{}] : []),
-        ],
-      },
-      data: { status: "RESOLVED", snoozedUntil: null },
-    });
+    if (!customerAllowsActionableOpportunity(customer.status)) {
+      await resolveActiveOpportunities(tx, context, customer.id, {}, "customer_not_actionable");
+    } else {
+      if (obsoleteEvents.length) {
+        await resolveActiveOpportunities(
+          tx,
+          context,
+          customer.id,
+          { journeyEventId: { in: obsoleteEvents.map((event) => event.id) } },
+          "journey_event_superseded",
+        );
+      }
+      await resolveActiveOpportunities(
+        tx,
+        context,
+        customer.id,
+        { journeyEvent: { status: "EXPIRED" } },
+        "journey_event_expired",
+      );
+    }
 
     return persisted;
   });
@@ -219,8 +268,14 @@ export async function refreshJourneyEventsForCustomer(customerId: string, instan
   return refreshJourneyEventsForCustomerWithContext(await requireAuthContext(), customerId, instant);
 }
 
-export async function refreshJourneyEventsForOrganizationWithContext(context: AuthContext, instant = new Date()) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:view");
+export async function refreshJourneyEventsForOrganizationWithContext(
+  context: AuthContext,
+  instant = new Date(),
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:manage",
+  );
   const customers = await prisma.customer.findMany({
     where: { organizationId: context.organizationId },
     select: { id: true },
@@ -229,6 +284,11 @@ export async function refreshJourneyEventsForOrganizationWithContext(context: Au
   for (const customer of customers) {
     await refreshJourneyEventsForCustomerWithContext(context, customer.id, instant);
   }
+  return { refreshedCustomers: customers.length };
+}
+
+export async function refreshJourneyEventsForOrganization(instant = new Date()) {
+  return refreshJourneyEventsForOrganizationWithContext(await requireAuthContext(), instant);
 }
 
 export type OpportunityListInput = {
@@ -243,14 +303,27 @@ export type OpportunityListInput = {
 const opportunityStatuses = ["OPEN", "SNOOZED", "DISMISSED", "RESOLVED"] as const;
 const opportunityPriorities = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
-export async function listOpportunitiesWithContext(context: AuthContext, input: OpportunityListInput = {}, instant = new Date()) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:view");
-  await refreshJourneyEventsForOrganizationWithContext(context, instant);
+export async function listOpportunitiesWithContext(
+  context: AuthContext,
+  input: OpportunityListInput = {},
+  instant = new Date(),
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:view",
+  );
   const today = asOfDate(instant);
-  const status = opportunityStatuses.includes(input.status as (typeof opportunityStatuses)[number]) ? input.status : "OPEN";
-  const priority = opportunityPriorities.includes(input.priority as (typeof opportunityPriorities)[number]) ? input.priority : undefined;
+  const status = opportunityStatuses.includes(input.status as (typeof opportunityStatuses)[number])
+    ? input.status
+    : "OPEN";
+  const priority = opportunityPriorities.includes(input.priority as (typeof opportunityPriorities)[number])
+    ? input.priority
+    : undefined;
   const source = input.source === "PREGNANCY" || input.source === "CHILD" ? input.source : undefined;
-  const timing = input.timing === "OVERDUE" || input.timing === "TODAY" || input.timing === "UPCOMING" ? input.timing : undefined;
+  const timing =
+    input.timing === "OVERDUE" || input.timing === "TODAY" || input.timing === "UPCOMING"
+      ? input.timing
+      : undefined;
   const customerSearch = input.customer?.trim();
 
   const where: Prisma.OpportunityWhereInput = {
@@ -258,8 +331,8 @@ export async function listOpportunitiesWithContext(context: AuthContext, input: 
     status: status as Prisma.EnumOpportunityStatusFilter["equals"],
     ...(priority ? { priority: priority as Prisma.EnumOpportunityPriorityFilter["equals"] } : {}),
     ...(input.responsibleMembershipId ? { responsibleMembershipId: input.responsibleMembershipId } : {}),
-    ...(source === "PREGNANCY" ? { pregnancyId: { not: null } } : {}),
-    ...(source === "CHILD" ? { childId: { not: null } } : {}),
+    ...(source === "PREGNANCY" ? { journeyEvent: { pregnancyId: { not: null } } } : {}),
+    ...(source === "CHILD" ? { journeyEvent: { childId: { not: null } } } : {}),
     ...(timing === "OVERDUE" ? { recommendedAt: { lt: today } } : {}),
     ...(timing === "TODAY" ? { recommendedAt: today } : {}),
     ...(timing === "UPCOMING" ? { recommendedAt: { gt: today } } : {}),
@@ -271,9 +344,15 @@ export async function listOpportunitiesWithContext(context: AuthContext, input: 
       where,
       include: {
         customer: { select: { id: true, name: true, status: true } },
-        journeyEvent: { select: { type: true, effectiveAt: true, status: true } },
-        pregnancy: { select: { id: true, expectedDueDate: true } },
-        child: { select: { id: true, name: true, birthDate: true } },
+        journeyEvent: {
+          select: {
+            type: true,
+            effectiveAt: true,
+            status: true,
+            pregnancy: { select: { id: true, expectedDueDate: true } },
+            child: { select: { id: true, name: true, birthDate: true } },
+          },
+        },
         responsibleMembership: { select: { id: true, user: { select: { name: true } } } },
       },
       orderBy: [{ priority: "desc" }, { score: "desc" }, { recommendedAt: "asc" }, { id: "asc" }],
@@ -285,31 +364,70 @@ export async function listOpportunitiesWithContext(context: AuthContext, input: 
       orderBy: { user: { name: "asc" } },
     }),
   ]);
-  return { items, members, context, today, applied: { status, priority, source, timing, customer: customerSearch ?? "", responsibleMembershipId: input.responsibleMembershipId ?? "" } };
+
+  return {
+    items,
+    members,
+    context,
+    today,
+    applied: {
+      status,
+      priority,
+      source,
+      timing,
+      customer: customerSearch ?? "",
+      responsibleMembershipId: input.responsibleMembershipId ?? "",
+    },
+  };
 }
 
 export async function listOpportunities(input: OpportunityListInput = {}) {
   return listOpportunitiesWithContext(await requireAuthContext(), input);
 }
 
-export async function listCustomerJourneyEventsWithContext(context: AuthContext, customerId: string, instant = new Date()) {
-  await refreshJourneyEventsForCustomerWithContext(context, customerId, instant);
+export async function listCustomerJourneyEventsWithContext(
+  context: AuthContext,
+  customerId: string,
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:view",
+  );
   return prisma.journeyEvent.findMany({
-    where: { organizationId: context.organizationId, customerId, status: { in: ["UPCOMING", "DUE"] } },
-    include: { child: { select: { name: true } }, pregnancy: { select: { expectedDueDate: true } } },
+    where: {
+      organizationId: context.organizationId,
+      customerId,
+      status: { in: ["UPCOMING", "DUE"] },
+    },
+    include: {
+      child: { select: { name: true } },
+      pregnancy: { select: { expectedDueDate: true } },
+    },
     orderBy: [{ effectiveAt: "asc" }, { type: "asc" }],
   });
 }
 
-export async function listCustomerOpportunitiesWithContext(context: AuthContext, customerId: string, instant = new Date()) {
-  await refreshJourneyEventsForCustomerWithContext(context, customerId, instant);
+export async function listCustomerOpportunitiesWithContext(
+  context: AuthContext,
+  customerId: string,
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:view",
+  );
   return prisma.opportunity.findMany({
     where: { organizationId: context.organizationId, customerId },
     include: {
       customer: { select: { id: true, name: true, status: true } },
-      journeyEvent: { select: { type: true, effectiveAt: true, status: true } },
-      pregnancy: { select: { expectedDueDate: true } },
-      child: { select: { name: true, birthDate: true } },
+      journeyEvent: {
+        select: {
+          type: true,
+          effectiveAt: true,
+          status: true,
+          pregnancy: { select: { expectedDueDate: true } },
+          child: { select: { name: true, birthDate: true } },
+        },
+      },
       responsibleMembership: { select: { id: true, user: { select: { name: true } } } },
     },
     orderBy: [{ status: "asc" }, { priority: "desc" }, { score: "desc" }, { recommendedAt: "asc" }],
@@ -317,25 +435,56 @@ export async function listCustomerOpportunitiesWithContext(context: AuthContext,
   });
 }
 
-export async function getNextCustomerOpportunityWithContext(context: AuthContext, customerId: string, instant = new Date()) {
-  await refreshJourneyEventsForCustomerWithContext(context, customerId, instant);
+export async function getNextCustomerOpportunityWithContext(
+  context: AuthContext,
+  customerId: string,
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:view",
+  );
   return prisma.opportunity.findFirst({
     where: { organizationId: context.organizationId, customerId, status: "OPEN" },
-    include: { journeyEvent: { select: { type: true } }, child: { select: { name: true } } },
+    include: {
+      journeyEvent: {
+        select: { type: true, child: { select: { name: true } }, pregnancy: { select: { id: true } } },
+      },
+    },
     orderBy: [{ priority: "desc" }, { score: "desc" }, { recommendedAt: "asc" }],
   });
 }
 
-export async function snoozeOpportunityWithContext(context: AuthContext, opportunityId: string, days = 7, instant = new Date()) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:manage");
-  const opportunity = await prisma.opportunity.findFirst({ where: { id: opportunityId, organizationId: context.organizationId } });
+export async function snoozeOpportunityWithContext(
+  context: AuthContext,
+  opportunityId: string,
+  days = 7,
+  instant = new Date(),
+) {
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:manage",
+  );
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: opportunityId, organizationId: context.organizationId },
+  });
   if (!opportunity) throw new AppError(404, "OPPORTUNITY_NOT_FOUND", "Oportunidade não encontrada.");
-  if (opportunity.status === "DISMISSED" || opportunity.status === "RESOLVED") throw new AppError(409, "OPPORTUNITY_CLOSED", "Esta oportunidade já foi encerrada.");
+  if (opportunity.status === "DISMISSED" || opportunity.status === "RESOLVED") {
+    throw new AppError(409, "OPPORTUNITY_CLOSED", "Esta oportunidade já foi encerrada.");
+  }
   const until = new Date(asOfDate(instant));
   until.setUTCDate(until.getUTCDate() + Math.max(1, Math.min(days, 90)));
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.opportunity.update({ where: { id: opportunity.id }, data: { status: "SNOOZED", snoozedUntil: until } });
-    await writeAudit(tx, context, { action: "opportunity.snoozed", entityType: "Opportunity", entityId: updated.id, customerId: updated.customerId, metadata: { snoozedUntil: until.toISOString().slice(0, 10) } });
+    const updated = await tx.opportunity.update({
+      where: { id: opportunity.id },
+      data: { status: "SNOOZED", snoozedUntil: until },
+    });
+    await writeAudit(tx, context, {
+      action: "opportunity.snoozed",
+      entityType: "Opportunity",
+      entityId: updated.id,
+      customerId: updated.customerId,
+      metadata: { snoozedUntil: until.toISOString().slice(0, 10) },
+    });
     return updated;
   });
 }
@@ -345,28 +494,34 @@ export async function snoozeOpportunity(opportunityId: string, days = 7) {
 }
 
 export async function dismissOpportunityWithContext(context: AuthContext, opportunityId: string) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:manage");
-  const opportunity = await prisma.opportunity.findFirst({ where: { id: opportunityId, organizationId: context.organizationId } });
+  assertAuthorized(
+    { role: context.role, active: true, organizationId: context.organizationId },
+    "opportunity:manage",
+  );
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: opportunityId, organizationId: context.organizationId },
+  });
   if (!opportunity) throw new AppError(404, "OPPORTUNITY_NOT_FOUND", "Oportunidade não encontrada.");
-  if (opportunity.status === "RESOLVED") throw new AppError(409, "OPPORTUNITY_CLOSED", "Esta oportunidade já foi encerrada.");
+  if (opportunity.status === "RESOLVED") {
+    throw new AppError(409, "OPPORTUNITY_CLOSED", "Esta oportunidade já foi encerrada.");
+  }
+  if (opportunity.status === "DISMISSED") return opportunity;
+
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.opportunity.update({ where: { id: opportunity.id }, data: { status: "DISMISSED", snoozedUntil: null } });
-    await writeAudit(tx, context, { action: "opportunity.dismissed", entityType: "Opportunity", entityId: updated.id, customerId: updated.customerId });
+    const updated = await tx.opportunity.update({
+      where: { id: opportunity.id },
+      data: { status: "DISMISSED", snoozedUntil: null },
+    });
+    await writeAudit(tx, context, {
+      action: "opportunity.dismissed",
+      entityType: "Opportunity",
+      entityId: updated.id,
+      customerId: updated.customerId,
+    });
     return updated;
   });
 }
 
 export async function dismissOpportunity(opportunityId: string) {
   return dismissOpportunityWithContext(await requireAuthContext(), opportunityId);
-}
-
-export async function resolveOpportunityWithContext(context: AuthContext, opportunityId: string) {
-  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "opportunity:manage");
-  const opportunity = await prisma.opportunity.findFirst({ where: { id: opportunityId, organizationId: context.organizationId } });
-  if (!opportunity) throw new AppError(404, "OPPORTUNITY_NOT_FOUND", "Oportunidade não encontrada.");
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.opportunity.update({ where: { id: opportunity.id }, data: { status: "RESOLVED", snoozedUntil: null } });
-    await writeAudit(tx, context, { action: "opportunity.resolved", entityType: "Opportunity", entityId: updated.id, customerId: updated.customerId });
-    return updated;
-  });
 }

@@ -60,8 +60,8 @@ export const journeyEventLabels: Record<string, string> = {
 export const journeyEventStatusLabels: Record<string, string> = {
   UPCOMING: "Próximo",
   DUE: "No momento",
-  PROCESSED: "Encerrado",
-  DISMISSED: "Descartado",
+  EXPIRED: "Expirado",
+  SUPERSEDED: "Substituído",
 };
 
 export const opportunityPriorityLabels: Record<string, string> = {

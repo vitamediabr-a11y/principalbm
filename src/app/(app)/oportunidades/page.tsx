@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Target } from "lucide-react";
+import { RefreshCw, Target } from "lucide-react";
 import { listOpportunities } from "@/services/journey-opportunity-service";
 import { hasPermission } from "@/lib/permissions";
 import { opportunityPriorityLabels, opportunityStatusLabels } from "@/lib/labels";
+import { refreshOpportunitiesAction } from "@/app/actions/opportunity-actions";
 import { OpportunityCard } from "@/components/opportunities/opportunity-card";
 import { Card } from "@/components/ui/card";
 
@@ -25,9 +26,12 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
   const canManage = hasPermission(result.context.role, "opportunity:manage");
 
   return <div className="space-y-5">
-    <div className="flex items-start gap-3">
-      <div className="mt-1 rounded-xl bg-slate-950 p-2 text-white"><Target className="size-5" /></div>
-      <div className="min-w-0"><h1 className="text-2xl font-black tracking-tight">Oportunidades</h1><p className="mt-1 text-sm text-slate-600">Quem merece atenção agora, por qual motivo e em qual momento.</p></div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="mt-1 rounded-xl bg-slate-950 p-2 text-white"><Target className="size-5" /></div>
+        <div className="min-w-0"><h1 className="text-2xl font-black tracking-tight">Oportunidades</h1><p className="mt-1 text-sm text-slate-600">Quem merece atenção agora, por qual motivo e em qual momento.</p></div>
+      </div>
+      {canManage && <form action={refreshOpportunitiesAction}><button type="submit" data-qa-refresh-opportunities className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white sm:w-auto"><RefreshCw className="size-4" />Atualizar oportunidades</button></form>}
     </div>
 
     <Card className="p-4">
@@ -44,7 +48,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
 
     <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-slate-600">{result.items.length} {result.items.length === 1 ? "oportunidade" : "oportunidades"}</p><p className="hidden text-xs text-slate-400 sm:block">Ordenadas por prioridade, pontuação e momento recomendado.</p></div>
 
-    {result.items.length === 0 ? <Card className="p-6 text-center"><h2 className="font-bold">Nenhuma oportunidade no momento</h2><p className="mt-2 text-sm text-slate-500">Os filtros atuais não retornaram nenhuma oportunidade real.</p></Card> : <div className="space-y-3">{result.items.map((opportunity) => <OpportunityCard key={opportunity.id} opportunity={opportunity} canManage={canManage} />)}</div>}
+    {result.items.length === 0 ? <Card className="p-6 text-center"><h2 className="font-bold">Nenhuma oportunidade no momento</h2><p className="mt-2 text-sm text-slate-500">Os filtros atuais não retornaram nenhuma oportunidade real.</p>{canManage && <p className="mt-2 text-xs text-slate-400">Use “Atualizar oportunidades” para detectar novos marcos de jornada.</p>}</Card> : <div className="space-y-3">{result.items.map((opportunity) => <OpportunityCard key={opportunity.id} opportunity={opportunity} canManage={canManage} />)}</div>}
 
     {!canManage && <p className="text-xs text-slate-500">Seu perfil possui acesso de leitura. Alterações operacionais de oportunidades estão desabilitadas.</p>}
     <span className="sr-only">{opportunityStatusLabels[result.applied.status]}</span>

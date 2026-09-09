@@ -6,7 +6,7 @@ CREATE TYPE principal."JourneyEventType" AS ENUM (
   'CHILD_30_DAYS', 'CHILD_3_MONTHS', 'CHILD_6_MONTHS', 'CHILD_9_MONTHS',
   'CHILD_12_MONTHS', 'CHILD_18_MONTHS', 'CHILD_2_YEARS'
 );
-CREATE TYPE principal."JourneyEventStatus" AS ENUM ('UPCOMING', 'DUE', 'PROCESSED', 'DISMISSED');
+CREATE TYPE principal."JourneyEventStatus" AS ENUM ('UPCOMING', 'DUE', 'EXPIRED', 'SUPERSEDED');
 CREATE TYPE principal."OpportunityStatus" AS ENUM ('OPEN', 'SNOOZED', 'DISMISSED', 'RESOLVED');
 CREATE TYPE principal."OpportunityPriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
 
@@ -25,6 +25,7 @@ CREATE TABLE principal."journey_events" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "journey_events_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "journey_events_exactly_one_source_check" CHECK ((CASE WHEN "pregnancyId" IS NULL THEN 0 ELSE 1 END) + (CASE WHEN "childId" IS NULL THEN 0 ELSE 1 END) = 1),
   CONSTRAINT "journey_events_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES principal."organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_events_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES principal."customers"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "journey_events_pregnancyId_fkey" FOREIGN KEY ("pregnancyId") REFERENCES principal."pregnancies"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -42,8 +43,6 @@ CREATE TABLE principal."opportunities" (
   "organizationId" UUID NOT NULL,
   "customerId" UUID NOT NULL,
   "journeyEventId" UUID NOT NULL,
-  "pregnancyId" UUID,
-  "childId" UUID,
   "reasonCode" VARCHAR(80) NOT NULL,
   "reasonLabel" VARCHAR(220) NOT NULL,
   "recommendedAt" DATE NOT NULL,
@@ -61,8 +60,6 @@ CREATE TABLE principal."opportunities" (
   CONSTRAINT "opportunities_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES principal."organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "opportunities_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES principal."customers"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "opportunities_journeyEventId_fkey" FOREIGN KEY ("journeyEventId") REFERENCES principal."journey_events"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "opportunities_pregnancyId_fkey" FOREIGN KEY ("pregnancyId") REFERENCES principal."pregnancies"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "opportunities_childId_fkey" FOREIGN KEY ("childId") REFERENCES principal."children"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "opportunities_responsibleMembershipId_fkey" FOREIGN KEY ("responsibleMembershipId") REFERENCES principal."memberships"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "opportunities_journeyEventId_key" ON principal."opportunities"("journeyEventId");
@@ -96,16 +93,6 @@ ALTER TABLE principal."opportunities"
   FOREIGN KEY ("journeyEventId", "organizationId")
   REFERENCES principal."journey_events"("id", "organizationId")
   ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE principal."opportunities"
-  ADD CONSTRAINT "opportunities_pregnancy_same_customer_fkey"
-  FOREIGN KEY ("pregnancyId", "customerId")
-  REFERENCES principal."pregnancies"("id", "customerId")
-  ON DELETE NO ACTION ON UPDATE CASCADE;
-ALTER TABLE principal."opportunities"
-  ADD CONSTRAINT "opportunities_child_same_customer_fkey"
-  FOREIGN KEY ("childId", "customerId")
-  REFERENCES principal."children"("id", "customerId")
-  ON DELETE NO ACTION ON UPDATE CASCADE;
 ALTER TABLE principal."opportunities"
   ADD CONSTRAINT "opportunities_responsible_same_org_fkey"
   FOREIGN KEY ("responsibleMembershipId", "organizationId")
