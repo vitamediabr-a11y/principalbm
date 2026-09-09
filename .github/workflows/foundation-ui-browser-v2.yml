@@ -1,0 +1,170 @@
+name: Foundation browser verification v2
+
+on:
+  push:
+    branches:
+      - verify/foundation-ui
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: principalbm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d principalbm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/principalbm
+      BETTER_AUTH_SECRET: browser-only-secret-not-used-in-production-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3000
+      APP_TIME_ZONE: America/Belem
+      BOOTSTRAP_CONFIRM: CREATE_FIRST_OWNER
+      BOOTSTRAP_OWNER_EMAIL: qa.owner@example.invalid
+      BOOTSTRAP_OWNER_NAME: Proprietário QA
+      BOOTSTRAP_ORGANIZATION_NAME: Organização QA Descartável
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate disposable credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_password="$(openssl rand -hex 24)"
+          owner_password="Qa-$(openssl rand -hex 20)-9!"
+          echo "::add-mask::$db_password"
+          echo "::add-mask::$owner_password"
+          echo "DATABASE_URL=postgresql://crm_app:$db_password@localhost:5432/principalbm" >> "$GITHUB_ENV"
+          echo "BOOTSTRAP_OWNER_PASSWORD=$owner_password" >> "$GITHUB_ENV"
+          echo "CI_CRM_APP_PASSWORD=$db_password" >> "$GITHUB_ENV"
+      - name: Prepare disposable database
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021400_runtime_roles/migration.sql
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v crm_app_password="$CI_CRM_APP_PASSWORD" -f tests/sql/bootstrap-ci-runtime.sql
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
+      - run: npm run prisma:generate
+      - run: npm run bootstrap:owner
+      - name: Seed disposable visual states
+        shell: bash
+        run: |
+          cat > scripts/browser-seed.ts <<'EOF'
+          import { prisma } from "../src/lib/prisma";
+          async function main() {
+            const owner = await prisma.membership.findFirstOrThrow({ where: { role: "OWNER", active: true } });
+            const customer = await prisma.customer.create({ data: {
+              organizationId: owner.organizationId,
+              responsibleMembershipId: owner.id,
+              name: "Maria da Conceição Albuquerque de Souza — Cliente com nome propositalmente longo",
+              whatsapp: "(11) 99876-5432", whatsappNormalized: "11998765432",
+              email: "maria.qa@example.invalid", city: "Belém", source: "PHYSICAL_STORE", status: "RECURRING",
+              notes: "Cadastro descartável usado somente para inspeção visual em CI."
+            }});
+            const child1 = await prisma.child.create({ data: { customerId: customer.id, name: "Ana Clara", birthDate: new Date("2024-02-10T12:00:00Z"), currentSize: "M", preferences: "Algodão e cores neutras" } });
+            await prisma.child.create({ data: { customerId: customer.id, name: "João Miguel com um nome infantil também bastante comprido", birthDate: new Date("2022-05-18T12:00:00Z"), currentSize: "4" } });
+            await prisma.pregnancy.create({ data: { customerId: customer.id, expectedDueDate: new Date("2024-02-15T12:00:00Z"), babyName: "Ana Clara", status: "COMPLETED", confirmedBirthDate: new Date("2024-02-10T12:00:00Z"), confirmedChildId: child1.id } });
+            await prisma.pregnancy.create({ data: { customerId: customer.id, expectedDueDate: new Date("2026-09-01T12:00:00Z"), babyName: "Bebê em acompanhamento", status: "ACTIVE", reportedPregnancyMonth: 9 } });
+            console.log(`CUSTOMER_ID=${customer.id}`);
+          }
+          main().finally(() => prisma.$disconnect());
+          EOF
+          output="$(npx tsx scripts/browser-seed.ts)"
+          echo "$output" | grep '^CUSTOMER_ID=' >> "$GITHUB_ENV"
+          rm scripts/browser-seed.ts
+      - run: npm run build
+      - name: Install Chromium
+        shell: bash
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start production application
+        shell: bash
+        run: |
+          npm start > /tmp/principal-app.log 2>&1 &
+          for i in {1..60}; do
+            curl -fsS http://127.0.0.1:3000/login >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/principal-app.log
+          exit 1
+      - name: Verify real UI in Chromium
+        shell: bash
+        run: |
+          mkdir -p ui-artifacts/screenshots
+          cat > scripts/browser-verify.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+          const base='http://127.0.0.1:3000';
+          const widths=[320,375,390,430,1280];
+          const report={generatedAt:new Date().toISOString(),pages:[],expandedStates:[],login:{},search:{}};
+          const browser=await chromium.launch({headless:true});
+          async function inspect(page,label,width,route){
+            await page.goto(base+route,{waitUntil:'networkidle'});
+            const m=await page.evaluate(()=>{
+              const root=document.documentElement;
+              const interactive=[...document.querySelectorAll('button,a[href],input,select,textarea,summary,[role="button"]')].filter(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'}).map(el=>{const r=el.getBoundingClientRect();return{tag:el.tagName,text:(el.getAttribute('aria-label')||el.textContent||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,90),w:Math.round(r.width),h:Math.round(r.height)}});
+              const english=[...new Set((document.body.innerText.match(/\b(Save|Cancel|Search|Customer|Customers|Children|Pregnancy|Birth|Loading|Submit|Delete)\b/g)||[]))];
+              return{viewport:innerWidth,scrollWidth:root.scrollWidth,overflowX:root.scrollWidth>innerWidth+1,tooSmall:interactive.filter(x=>x.w<44||x.h<44),english,h1:document.querySelector('h1')?.textContent?.trim()||null,bodyText:document.body.innerText.slice(0,3500)};
+            });
+            const file=`ui-artifacts/screenshots/${width}-${label}.png`;
+            await page.screenshot({path:file,fullPage:true});
+            report.pages.push({label,width,route,screenshot:file,...m});
+          }
+          for(const width of widths){
+            const ctx=await browser.newContext({viewport:{width,height:width===1280?800:844},isMobile:width<600,hasTouch:width<600});
+            const p=await ctx.newPage();
+            await inspect(p,'login',width,'/login');
+            const e=p.getByLabel('E-mail'); await e.focus();
+            report.login[width]=await e.evaluate(el=>({type:el.type,inputMode:el.inputMode,autocomplete:el.autocomplete,focused:document.activeElement===el}));
+            await ctx.close();
+          }
+          const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+          const page=await ctx.newPage();
+          await page.goto(base+'/login',{waitUntil:'networkidle'});
+          await page.getByLabel('E-mail').fill(process.env.BOOTSTRAP_OWNER_EMAIL);
+          await page.getByLabel('Senha').fill(process.env.BOOTSTRAP_OWNER_PASSWORD);
+          await page.getByRole('button',{name:'Entrar'}).click();
+          await page.waitForURL('**/clientes',{timeout:15000}); report.login.success=true;
+          const id=process.env.CUSTOMER_ID;
+          const routes=[['clientes','/clientes'],['novo-cliente','/clientes/novo'],['cliente-360',`/clientes/${id}`],['editar-cliente',`/clientes/${id}/editar`],['jornada',`/clientes/${id}/jornada`],['criancas',`/clientes/${id}/criancas`]];
+          for(const width of widths){await page.setViewportSize({width,height:width===1280?800:844});for(const [label,route] of routes)await inspect(page,label,width,route);}
+          await page.setViewportSize({width:390,height:844});
+          await page.goto(base+'/clientes',{waitUntil:'networkidle'});
+          const search=page.locator('input[type="search"],input[name="search"],input[placeholder*="Buscar" i]').first();
+          if(await search.count()){await search.fill('ZZZ CLIENTE INEXISTENTE ZZZ');await search.press('Enter');await page.waitForLoadState('networkidle');report.search={tested:true,url:page.url(),text:(await page.locator('body').innerText()).slice(0,1800)};await page.screenshot({path:'ui-artifacts/screenshots/390-clientes-busca-vazia.png',fullPage:true});}else report.search={tested:false};
+          for(const [route,names] of [[`/clientes/${id}/jornada`,['Editar dados da gestação','Confirmar nascimento']],[`/clientes/${id}/criancas`,['Editar']]]){
+            await page.goto(base+route,{waitUntil:'networkidle'});
+            for(const name of names){const summary=page.locator('summary').filter({hasText:name}).first();if(await summary.count()){await summary.click();await page.waitForTimeout(150);const file=`ui-artifacts/screenshots/390-expandido-${name.replace(/\s+/g,'-').toLowerCase()}.png`;await page.screenshot({path:file,fullPage:true});const metrics=await page.evaluate(()=>({scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth,overflowX:document.documentElement.scrollWidth>innerWidth+1}));report.expandedStates.push({route,name,file,...metrics});}}
+          }
+          fs.writeFileSync('ui-artifacts/report.json',JSON.stringify(report,null,2));
+          console.log(JSON.stringify({pages:report.pages.length,overflow:report.pages.filter(x=>x.overflowX).map(x=>[x.width,x.label]),english:report.pages.filter(x=>x.english.length).map(x=>[x.width,x.label,x.english]),touch:report.pages.reduce((n,x)=>n+x.tooSmall.length,0),expanded:report.expandedStates},null,2));
+          await browser.close();
+          EOF
+          node scripts/browser-verify.mjs
+          rm scripts/browser-verify.mjs
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-ui-browser-evidence-v2
+          path: ui-artifacts
+          if-no-files-found: error
+          retention-days: 1
