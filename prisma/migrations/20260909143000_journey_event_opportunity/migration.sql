@@ -33,6 +33,7 @@ CREATE TABLE principal."journey_events" (
 );
 CREATE UNIQUE INDEX "journey_events_organizationId_dedupeKey_key" ON principal."journey_events"("organizationId", "dedupeKey");
 CREATE UNIQUE INDEX "journey_events_id_organizationId_key" ON principal."journey_events"("id", "organizationId");
+CREATE UNIQUE INDEX "journey_events_id_customerId_organizationId_key" ON principal."journey_events"("id", "customerId", "organizationId");
 CREATE INDEX "journey_events_organizationId_status_effectiveAt_idx" ON principal."journey_events"("organizationId", "status", "effectiveAt");
 CREATE INDEX "journey_events_customerId_status_effectiveAt_idx" ON principal."journey_events"("customerId", "status", "effectiveAt");
 CREATE INDEX "journey_events_pregnancyId_effectiveAt_idx" ON principal."journey_events"("pregnancyId", "effectiveAt");
@@ -89,9 +90,9 @@ ALTER TABLE principal."opportunities"
   REFERENCES principal."customers"("id", "organizationId")
   ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE principal."opportunities"
-  ADD CONSTRAINT "opportunities_event_same_org_fkey"
-  FOREIGN KEY ("journeyEventId", "organizationId")
-  REFERENCES principal."journey_events"("id", "organizationId")
+  ADD CONSTRAINT "opportunities_event_same_customer_org_fkey"
+  FOREIGN KEY ("journeyEventId", "customerId", "organizationId")
+  REFERENCES principal."journey_events"("id", "customerId", "organizationId")
   ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE principal."opportunities"
   ADD CONSTRAINT "opportunities_responsible_same_org_fkey"

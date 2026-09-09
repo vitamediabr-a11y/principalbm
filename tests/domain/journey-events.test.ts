@@ -62,10 +62,10 @@ describe("journey event rules", () => {
     expect(addCalendarMonthsClamped(d("2024-02-29"), 24).toISOString().slice(0, 10)).toBe("2026-02-28");
   });
 
-  it("classifies future, due and stale events deterministically", () => {
+  it("classifies future, due and expired events without implying human processing", () => {
     expect(classifyJourneyEventStatus("CHILD_3_MONTHS", d("2026-09-10"), d("2026-09-09"))).toBe("UPCOMING");
     expect(classifyJourneyEventStatus("CHILD_3_MONTHS", d("2026-09-09"), d("2026-09-09"))).toBe("DUE");
-    expect(classifyJourneyEventStatus("CHILD_3_MONTHS", d("2026-07-01"), d("2026-09-09"))).toBe("PROCESSED");
+    expect(classifyJourneyEventStatus("CHILD_3_MONTHS", d("2026-07-01"), d("2026-09-09"))).toBe("EXPIRED");
     expect(classifyJourneyEventStatus("PREGNANCY_UPDATE_REQUIRED", d("2026-07-01"), d("2026-09-09"))).toBe("DUE");
   });
 

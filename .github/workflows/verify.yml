@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - build/initial-crm-slice
+      - build/journey-event-opportunity
   pull_request:
     branches:
       - main
@@ -49,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
           echo "CI_CRM_APP_PASSWORD=$password" >> "$GITHUB_ENV"
           echo "DATABASE_URL=postgresql://crm_app:$password@localhost:5432/principalbm" >> "$GITHUB_ENV"
       - name: Apply runtime role bootstrap as database admin
@@ -59,6 +61,8 @@ jobs:
         run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
       - name: Apply tenant integrity migration as database admin
         run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
+      - name: Apply journey event and opportunity migration
+        run: psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909143000_journey_event_opportunity/migration.sql
       - name: Verify runtime database login
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select current_user, current_schema();"
       - name: Validate Prisma schema
