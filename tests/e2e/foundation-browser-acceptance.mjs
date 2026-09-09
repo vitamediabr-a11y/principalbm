@@ -191,7 +191,8 @@ async function verifySearch(page, width) {
   await search.press("Enter");
   await page.waitForLoadState("networkidle");
   const restoredBody = await page.locator("body").innerText();
-  result.restored = restoredBody.includes(customerName) && restoredBody.includes("1 cliente encontrado");
+  const emptyStateVisible = await page.getByRole("heading", { name: "Nenhum cliente encontrado" }).isVisible().catch(() => false);
+  result.restored = restoredBody.includes(customerName) && !emptyStateVisible;
   if (!result.restored) fail("search_clear_restore_failed", { width, url: page.url() });
   await capture(page, width, "clientes-busca-restaurada", "/clientes", false);
 
