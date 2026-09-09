@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+.env
+.env.*
+!.env.example
+coverage/
+src/generated/
+.agents/
+.skills/
+*.log
+.DS_Store
