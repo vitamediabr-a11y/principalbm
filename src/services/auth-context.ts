@@ -14,14 +14,11 @@ export type AuthContext = {
   role: BusinessRole;
 };
 
-export async function requireAuthContext(): Promise<AuthContext> {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) throw new AppError(401, "UNAUTHENTICATED", "Faça login para continuar.");
-
+export async function resolveAuthContextForUser(userId: string): Promise<AuthContext> {
   const [user, memberships] = await Promise.all([
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, banned: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, banned: true } }),
     prisma.membership.findMany({
-      where: { userId: session.user.id, active: true },
+      where: { userId, active: true },
       include: { organization: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
       take: 2,
@@ -47,6 +44,12 @@ export async function requireAuthContext(): Promise<AuthContext> {
     membershipId: membership.id,
     role: membership.role,
   };
+}
+
+export async function requireAuthContext(): Promise<AuthContext> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) throw new AppError(401, "UNAUTHENTICATED", "Faça login para continuar.");
+  return resolveAuthContextForUser(session.user.id);
 }
 
 export async function requirePermission(permission: Permission) {
