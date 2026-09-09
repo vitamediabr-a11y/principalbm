@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
+    "bootstrap:owner": "tsx scripts/bootstrap-owner.ts",
     "test": "vitest run tests/domain",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "verify": "npm run prisma:validate && npm run prisma:generate && npm run test && npm run typecheck && npm run build"
