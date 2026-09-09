@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Baby, CalendarDays, History } from "lucide-react";
+import { ArrowRight, Baby, CalendarDays, History, Target } from "lucide-react";
 import { getCustomer360 } from "@/services/customer-service";
+import { getNextCustomerOpportunityWithContext } from "@/services/journey-opportunity-service";
 import { estimatePregnancy } from "@/services/pregnancy-service";
 import { describeChildJourney } from "@/services/child-service";
 import { AppError } from "@/lib/app-error";
-import { auditActionLabels, sourceLabels } from "@/lib/labels";
+import { auditActionLabels, journeyEventLabels, opportunityPriorityLabels, sourceLabels } from "@/lib/labels";
 import { formatDatePtBr } from "@/domain/shared/date-only";
 import { CustomerHeader } from "@/components/customers/customer-header";
 import { CustomerTabs } from "@/components/customers/customer-tabs";
@@ -17,7 +18,8 @@ export const metadata = { title: "Cliente 360" };
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const { customer } = await getCustomer360(id);
+    const { customer, context } = await getCustomer360(id);
+    const nextOpportunity = await getNextCustomerOpportunityWithContext(context, id);
     const activePregnancy = customer.pregnancies.find((pregnancy) => pregnancy.status === "ACTIVE");
     const pregnancyEstimate = activePregnancy ? estimatePregnancy(activePregnancy.expectedDueDate) : null;
     const activeJourneyCount = (activePregnancy ? 1 : 0) + customer.children.length;
@@ -27,6 +29,13 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <CustomerTabs customerId={customer.id} active="overview" />
 
       {activeJourneyCount > 1 && <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700">Esta cliente possui múltiplas jornadas independentes ativas.</div>}
+
+      <section aria-labelledby="opportunity-summary-title">
+        <Card className="p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Relacionamento</p><h2 id="opportunity-summary-title" className="mt-1 font-bold">Próxima oportunidade</h2></div><Target className="size-5 text-slate-400" /></div>
+          {!nextOpportunity ? <p className="mt-3 text-sm text-slate-500">Nenhuma oportunidade no momento.</p> : <div className="mt-3"><div className="flex flex-wrap items-center gap-2"><Badge>{opportunityPriorityLabels[nextOpportunity.priority]}</Badge><span className="text-sm font-bold">Pontuação {nextOpportunity.score}</span></div><p className="mt-2 text-sm font-semibold text-slate-900">{nextOpportunity.reasonLabel}</p><p className="mt-1 text-sm text-slate-600">{nextOpportunity.journeyEvent.child ? `${nextOpportunity.journeyEvent.child.name ?? "Criança"} — ` : "Gestação — "}{journeyEventLabels[nextOpportunity.journeyEvent.type]}</p><p className="mt-2 text-xs text-slate-500">Momento recomendado: {formatDatePtBr(nextOpportunity.recommendedAt)}</p><Link href={`/clientes/${customer.id}/oportunidades`} data-qa-hit-target="primary" className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-slate-700 hover:underline">Ver oportunidades <ArrowRight className="size-4" /></Link></div>}
+        </Card>
+      </section>
 
       <section aria-labelledby="journeys-title" className="space-y-3">
         <div className="flex items-center justify-between"><h2 id="journeys-title" className="text-lg font-bold">Jornadas</h2><Link href={`/clientes/${customer.id}/jornada`} data-qa-hit-target="primary" className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-slate-700 hover:underline">Ver jornada <ArrowRight className="size-4" /></Link></div>

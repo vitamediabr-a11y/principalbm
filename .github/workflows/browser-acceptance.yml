@@ -1,9 +1,10 @@
-name: Foundation browser acceptance
+name: Principal BM browser acceptance
 
 on:
   push:
     branches:
       - build/initial-crm-slice
+      - build/journey-event-opportunity
   pull_request:
     branches:
       - main
@@ -14,7 +15,7 @@ permissions:
 jobs:
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:17
@@ -67,15 +68,22 @@ jobs:
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v crm_app_password="$CI_CRM_APP_PASSWORD" -f tests/sql/bootstrap-ci-runtime.sql
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021500_initial_vertical_slice/migration.sql
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909021600_tenant_integrity/migration.sql
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260909143000_journey_event_opportunity/migration.sql
       - name: Generate Prisma client
         run: npm run prisma:generate
       - name: Bootstrap disposable Owner
         run: npm run bootstrap:owner
-      - name: Seed disposable visual states
+      - name: Seed disposable foundation visual states
         shell: bash
         run: |
           output="$(npx tsx tests/e2e/foundation-seed.ts)"
           echo "$output" | grep '^CUSTOMER_ID=' >> "$GITHUB_ENV"
+      - name: Seed disposable opportunity visual states
+        shell: bash
+        run: |
+          output="$(npx tsx tests/e2e/opportunity-seed.ts)"
+          echo "$output" | grep '^OPPORTUNITY_CUSTOMER_ID=' >> "$GITHUB_ENV"
+          echo "$output" | grep '^OPPORTUNITY_OWNER_MEMBERSHIP_ID=' >> "$GITHUB_ENV"
       - name: Production build
         run: npm run build
       - name: Install Chromium
@@ -93,8 +101,10 @@ jobs:
           done
           cat /tmp/principal-app.log
           exit 1
-      - name: Verify full UI matrix in Chromium
+      - name: Verify foundation regression matrix in Chromium
         run: node tests/e2e/foundation-browser-acceptance.mjs
+      - name: Verify opportunity slice matrix in Chromium
+        run: node tests/e2e/opportunity-browser-acceptance.mjs
       - name: Show server errors
         if: always()
         shell: bash
@@ -103,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: foundation-browser-acceptance
+          name: principal-browser-acceptance
           path: ui-artifacts
           if-no-files-found: error
           retention-days: 2

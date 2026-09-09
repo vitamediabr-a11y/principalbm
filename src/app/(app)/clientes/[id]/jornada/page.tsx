@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { AlertTriangle, Baby, CalendarDays, CheckCircle2 } from "lucide-react";
 import { getCustomer360 } from "@/services/customer-service";
+import { listCustomerJourneyEventsWithContext } from "@/services/journey-opportunity-service";
 import { estimatePregnancy } from "@/services/pregnancy-service";
 import { describeChildJourney } from "@/services/child-service";
 import { hasPermission } from "@/lib/permissions";
 import { AppError } from "@/lib/app-error";
-import { lifecycleEventLabels } from "@/lib/labels";
+import { journeyEventLabels, journeyEventStatusLabels, lifecycleEventLabels } from "@/lib/labels";
 import { formatDatePtBr } from "@/domain/shared/date-only";
 import { CustomerHeader } from "@/components/customers/customer-header";
 import { CustomerTabs } from "@/components/customers/customer-tabs";
@@ -20,6 +21,7 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   try {
     const { customer, context } = await getCustomer360(id);
+    const importantEvents = await listCustomerJourneyEventsWithContext(context, id);
     const canEdit = hasPermission(context.role, "lifecycle:edit");
     const canConfirmBirth = hasPermission(context.role, "birth:confirm");
     const activePregnancy = customer.pregnancies.find((pregnancy) => pregnancy.status === "ACTIVE");
@@ -43,12 +45,17 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
             </Card> : <Card className="p-4 sm:p-5"><p className="font-semibold">Nenhuma gestação ativa</p><p className="mt-1 text-sm text-slate-500">Gestação é um dado progressivo e não é obrigatória para cadastrar a cliente.</p>{canEdit && <details className="mt-4"><summary className="min-h-11 cursor-pointer py-2 text-sm font-bold">Adicionar gestação</summary><div className="mt-3"><PregnancyForm customerId={customer.id} /></div></details>}</Card>}
           </section>
 
+          <section aria-labelledby="important-events-title">
+            <div className="mb-3"><h2 id="important-events-title" className="text-lg font-bold">Eventos importantes da jornada</h2><p className="mt-1 text-sm text-slate-500">Marcos de relacionamento. Esta área não decide canal nem envia mensagens.</p></div>
+            {importantEvents.length === 0 ? <Card className="p-4 text-sm text-slate-500">Nenhum evento importante próximo ou pendente.</Card> : <div className="space-y-2">{importantEvents.slice(0, 12).map((event) => <Card key={event.id} className="p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-bold">{event.child ? `${event.child.name ?? "Criança"} — ` : "Gestação — "}{journeyEventLabels[event.type]}</p><p className="mt-1 text-xs text-slate-500">Data de referência: {formatDatePtBr(event.effectiveAt)}</p></div><Badge>{journeyEventStatusLabels[event.status]}</Badge></div>{event.type === "PREGNANCY_UPDATE_REQUIRED" && <p className="mt-2 text-sm text-amber-800">Aguardando atualização da cliente. Nenhum nascimento foi presumido.</p>}</Card>)}</div>}
+          </section>
+
           <section aria-labelledby="children-journey-title"><h2 id="children-journey-title" className="mb-3 text-lg font-bold">Jornadas das crianças</h2>{customer.children.length === 0 ? <Card className="p-4 text-sm text-slate-500">Nenhuma criança cadastrada.</Card> : <div className="grid gap-3 sm:grid-cols-2">{customer.children.map((child) => { const journey = describeChildJourney(child.birthDate); return <Card key={child.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{child.name ?? "Nome não informado"}</h3><p className="mt-1 text-sm text-slate-500">Nascimento: {formatDatePtBr(child.birthDate)}</p></div><Baby className="size-5 text-slate-400" /></div><div className="mt-3 flex flex-wrap gap-2"><Badge>{journey.age}</Badge><Badge>{journey.stage}</Badge></div></Card>; })}</div>}</section>
 
           {history.length > 0 && <section><h2 className="mb-3 text-lg font-bold">Histórico de gestações</h2><div className="space-y-3">{history.map((pregnancy) => <Card key={pregnancy.id} className="p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold">DPP: {formatDatePtBr(pregnancy.expectedDueDate)}</p><p className="mt-1 text-sm text-slate-500">{pregnancy.status === "COMPLETED" ? "Nascimento confirmado" : "Gestação arquivada"}{pregnancy.confirmedBirthDate ? ` em ${formatDatePtBr(pregnancy.confirmedBirthDate)}` : ""}</p></div>{pregnancy.status === "COMPLETED" ? <CheckCircle2 className="size-5 text-emerald-700" /> : <CalendarDays className="size-5 text-slate-400" />}</div></Card>)}</div></section>}
         </div>
 
-        <aside><Card className="p-4 sm:p-5"><h2 className="font-bold">Linha do tempo</h2>{customer.lifecycleEvents.length === 0 ? <p className="mt-4 text-sm text-slate-500">Nenhum evento de jornada registrado.</p> : <ol className="mt-4 space-y-4">{customer.lifecycleEvents.map((event) => <li key={event.id} className="relative border-l-2 border-slate-200 pl-4"><span className="absolute -left-[5px] top-1 size-2 rounded-full bg-slate-500" /><p className="text-sm font-semibold">{lifecycleEventLabels[event.type]}</p><p className="text-xs text-slate-500">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(event.occurredAt)}</p></li>)}</ol>}</Card></aside>
+        <aside><Card className="p-4 sm:p-5"><h2 className="font-bold">Linha do tempo factual</h2><p className="mt-1 text-xs text-slate-500">Histórico confirmado, separado dos eventos importantes acima.</p>{customer.lifecycleEvents.length === 0 ? <p className="mt-4 text-sm text-slate-500">Nenhum evento de jornada registrado.</p> : <ol className="mt-4 space-y-4">{customer.lifecycleEvents.map((event) => <li key={event.id} className="relative border-l-2 border-slate-200 pl-4"><span className="absolute -left-[5px] top-1 size-2 rounded-full bg-slate-500" /><p className="text-sm font-semibold">{lifecycleEventLabels[event.type]}</p><p className="text-xs text-slate-500">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(event.occurredAt)}</p></li>)}</ol>}</Card></aside>
       </div>
     </div>;
   } catch (error) {

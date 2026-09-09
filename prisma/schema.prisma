@@ -67,6 +67,53 @@ enum LifecycleEventType {
   @@schema("principal")
 }
 
+enum JourneyEventType {
+  PREGNANCY_MONTH_5
+  PREGNANCY_MONTH_6
+  PREGNANCY_MONTH_7
+  PREGNANCY_MONTH_8
+  DPP_MINUS_60
+  DPP_MINUS_30
+  DPP_MINUS_15
+  PREGNANCY_UPDATE_REQUIRED
+  CHILD_30_DAYS
+  CHILD_3_MONTHS
+  CHILD_6_MONTHS
+  CHILD_9_MONTHS
+  CHILD_12_MONTHS
+  CHILD_18_MONTHS
+  CHILD_2_YEARS
+
+  @@schema("principal")
+}
+
+enum JourneyEventStatus {
+  UPCOMING
+  DUE
+  EXPIRED
+  SUPERSEDED
+
+  @@schema("principal")
+}
+
+enum OpportunityStatus {
+  OPEN
+  SNOOZED
+  DISMISSED
+  RESOLVED
+
+  @@schema("principal")
+}
+
+enum OpportunityPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@schema("principal")
+}
+
 enum ConsentChannel {
   WHATSAPP
   EMAIL
@@ -164,6 +211,8 @@ model Organization {
   memberships Membership[]
   customers Customer[]
   events LifecycleEvent[]
+  journeyEvents JourneyEvent[]
+  opportunities Opportunity[]
   auditLogs AuditLog[]
   @@map("organizations")
   @@schema("principal")
@@ -179,6 +228,7 @@ model Membership {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   customers Customer[] @relation("ResponsibleMembership")
+  opportunities Opportunity[] @relation("OpportunityResponsible")
   @@unique([organizationId, userId])
   @@index([userId, active])
   @@index([organizationId, role])
@@ -207,6 +257,8 @@ model Customer {
   pregnancies Pregnancy[]
   children Child[]
   lifecycleEvents LifecycleEvent[]
+  journeyEvents JourneyEvent[]
+  opportunities Opportunity[]
   auditLogs AuditLog[]
   consents Consent[]
   @@unique([organizationId, whatsappNormalized])
@@ -236,6 +288,7 @@ model Pregnancy {
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   confirmedChild Child? @relation("ConfirmedBirth", fields: [confirmedChildId], references: [id], onDelete: Restrict)
   lifecycleEvents LifecycleEvent[]
+  journeyEvents JourneyEvent[]
   @@index([customerId, status])
   @@index([expectedDueDate])
   @@map("pregnancies")
@@ -255,6 +308,7 @@ model Child {
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   confirmedFromPregnancy Pregnancy? @relation("ConfirmedBirth")
   lifecycleEvents LifecycleEvent[]
+  journeyEvents JourneyEvent[]
   @@index([customerId, birthDate])
   @@map("children")
   @@schema("principal")
@@ -275,6 +329,60 @@ model LifecycleEvent {
   @@index([customerId, occurredAt(sort: Desc)])
   @@index([organizationId, occurredAt(sort: Desc)])
   @@map("lifecycle_events")
+  @@schema("principal")
+}
+model JourneyEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  customerId String @db.Uuid
+  pregnancyId String? @db.Uuid
+  childId String? @db.Uuid
+  type JourneyEventType
+  effectiveAt DateTime @db.Date
+  detectedAt DateTime @default(now())
+  status JourneyEventStatus @default(UPCOMING)
+  dedupeKey String @db.VarChar(240)
+  ruleVersion Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  pregnancy Pregnancy? @relation(fields: [pregnancyId], references: [id], onDelete: Restrict)
+  child Child? @relation(fields: [childId], references: [id], onDelete: Restrict)
+  opportunity Opportunity?
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status, effectiveAt])
+  @@index([customerId, status, effectiveAt])
+  @@index([pregnancyId, effectiveAt])
+  @@index([childId, effectiveAt])
+  @@map("journey_events")
+  @@schema("principal")
+}
+model Opportunity {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  customerId String @db.Uuid
+  journeyEventId String @unique @db.Uuid
+  reasonCode String @db.VarChar(80)
+  reasonLabel String @db.VarChar(220)
+  recommendedAt DateTime @db.Date
+  priority OpportunityPriority
+  score Int
+  responsibleMembershipId String? @db.Uuid
+  status OpportunityStatus @default(OPEN)
+  scoreExplanation Json
+  suggestedAction String @db.VarChar(320)
+  snoozedUntil DateTime? @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  journeyEvent JourneyEvent @relation(fields: [journeyEventId], references: [id], onDelete: Cascade)
+  responsibleMembership Membership? @relation("OpportunityResponsible", fields: [responsibleMembershipId], references: [id], onDelete: SetNull)
+  @@index([organizationId, status, priority, score, recommendedAt], map: "opportunities_org_status_priority_score_date_idx")
+  @@index([customerId, status, recommendedAt])
+  @@index([responsibleMembershipId, status])
+  @@map("opportunities")
   @@schema("principal")
 }
 model AuditLog {
