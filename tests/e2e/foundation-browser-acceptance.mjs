@@ -20,7 +20,7 @@ function fail(kind, details = {}) {
 
 function expectedPrimary(label) {
   const names = ["PRINCIPAL BM", "Sair", "Clientes"];
-  if (["cliente-360", "editar-cliente", "jornada", "criancas", "jornada-editar-gestacao", "jornada-confirmar-nascimento", "criancas-editar"].includes(label)) {
+  if (["cliente-360", "jornada", "criancas", "jornada-editar-gestacao", "jornada-confirmar-nascimento", "criancas-editar"].includes(label)) {
     names.push("Visão geral", "Jornada", "Crianças");
   }
   if (label === "cliente-360") names.push("Ver jornada");
