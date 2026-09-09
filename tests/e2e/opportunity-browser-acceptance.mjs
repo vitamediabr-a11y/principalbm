@@ -197,11 +197,11 @@ async function inspect(page, width, label, requiredTexts = []) {
     };
   });
 
-  const body = await page.locator("body").innerText();
+  const semanticText = await page.locator("body").textContent() ?? "";
   if (result.overflowX) fail("horizontal_overflow", { width, label, scrollWidth: result.scrollWidth });
   if (result.english.length) fail("english_leakage", { width, label, tokens: result.english });
   for (const text of requiredTexts) {
-    if (!body.includes(text)) fail("required_text_missing", { width, label, text });
+    if (!semanticText.includes(text)) fail("required_text_missing", { width, label, text });
   }
   if (width < 600) {
     if (!result.nav.present || result.nav.position !== "fixed") fail("mobile_navigation_missing", { width, label, nav: result.nav });
