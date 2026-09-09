@@ -38,3 +38,13 @@ export const lifecycleEventLabels: Record<string, string> = {
   CHILD_ADDED: "Criança adicionada",
   CHILD_UPDATED: "Dados da criança atualizados",
 };
+
+export const auditActionLabels: Record<string, string> = {
+  "customer.created": "Cliente criado",
+  "customer.updated": "Cliente atualizado",
+  "pregnancy.created": "Gestação adicionada",
+  "pregnancy.updated": "Gestação atualizada",
+  "pregnancy.birth_confirmed": "Nascimento confirmado",
+  "child.created": "Criança adicionada",
+  "child.updated": "Dados da criança atualizados",
+};
