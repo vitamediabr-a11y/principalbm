@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/app-error";
+import { assertAuthorized } from "@/lib/authorization";
 import { childInputSchema, type ChildInput } from "@/domain/child/schemas";
 import { dateOnlyFromInstant, parseDateOnly } from "@/domain/shared/date-only";
 import { getChildStage, formatChildAge } from "@/domain/child/child";
-import { requirePermission } from "@/services/auth-context";
+import { requireAuthContext, type AuthContext } from "@/services/auth-context";
 import { writeAudit } from "@/services/audit-service";
 
 function blankToNull(value?: string) {
@@ -21,8 +22,8 @@ function validateBirthDate(value: string) {
   return birthDate;
 }
 
-export async function createChild(customerId: string, rawInput: ChildInput) {
-  const context = await requirePermission("child:edit");
+export async function createChildWithContext(context: AuthContext, customerId: string, rawInput: ChildInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "child:edit");
   const input = childInputSchema.parse(rawInput);
   const customer = await prisma.customer.findFirst({ where: { id: customerId, organizationId: context.organizationId }, select: { id: true } });
   if (!customer) throw new AppError(404, "CUSTOMER_NOT_FOUND", "Cliente não encontrado.");
@@ -48,8 +49,12 @@ export async function createChild(customerId: string, rawInput: ChildInput) {
   });
 }
 
-export async function updateChild(childId: string, rawInput: ChildInput) {
-  const context = await requirePermission("child:edit");
+export async function createChild(customerId: string, rawInput: ChildInput) {
+  return createChildWithContext(await requireAuthContext(), customerId, rawInput);
+}
+
+export async function updateChildWithContext(context: AuthContext, childId: string, rawInput: ChildInput) {
+  assertAuthorized({ role: context.role, active: true, organizationId: context.organizationId }, "child:edit");
   const input = childInputSchema.parse(rawInput);
   const existing = await prisma.child.findFirst({
     where: { id: childId, customer: { organizationId: context.organizationId } },
@@ -76,6 +81,10 @@ export async function updateChild(childId: string, rawInput: ChildInput) {
     await writeAudit(tx, context, { action: "child.updated", entityType: "Child", entityId: child.id, customerId: existing.customerId });
     return child;
   });
+}
+
+export async function updateChild(childId: string, rawInput: ChildInput) {
+  return updateChildWithContext(await requireAuthContext(), childId, rawInput);
 }
 
 export function describeChildJourney(birthDate: Date) {
